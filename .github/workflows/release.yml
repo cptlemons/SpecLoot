@@ -1,0 +1,21 @@
+name: Release Addon
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on tags like v1.0.4
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for automatic changelog generation
+
+      - name: Package and Upload
+        uses: BigWigsMods/packager@master
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }} # Provided by GitHub automatically
