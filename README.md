@@ -1,74 +1,58 @@
 # SpecLoot
 
-A World of Warcraft addon that compares Mythic+ dungeon and raid loot drops side-by-side across every spec of any class.
+**SpecLoot** is a lightweight World of Warcraft addon designed to help you optimize your loot specialization. It compares Mythic+ and Raid loot side-by-side across every spec of your class, making it easy to see where your Best-in-Slot (BiS) items are hiding.
 
-## What it shows
-
-For the selected dungeon (or boss), class, and difficulty, you get:
-
-- A **Shared Loot** panel listing items that drop for *every* spec of the class.
-- One panel per spec listing items that drop only for that spec.
-- A per-item, difficulty-aware tooltip with the correct item level. Items that drop for more than one spec light up in every panel they appear in.
-
-Useful for picking which loot spec to set before pushing a key or queuing a raid, and for figuring out which spec gets the most unique gear from a given encounter.
+Useful for picking which loot spec to set before pushing a key or pulling a boss, and for identifying which spec has the highest density of unique upgrades in a specific encounter.
 
 ---
 
-## Repo layout
+## Key Features
 
-```
-SpecLoot/
-├── SpecLoot/            # the WoW addon — drop this folder into Interface/AddOns/
-│   ├── SpecLoot.toc
-│   ├── SpecLoot.lua     # frame, view-mode tabs, slash commands
-│   ├── Data.lua         # dungeon/raid manifest + class/spec reference
-│   ├── Scraper.lua      # in-game loot/spec scraper (writes to SpecLootDB)
-│   └── Output.lua       # copyable popup window for /sl debug + /sl probe
-└── tools/fetchloot/     # offline Go tool that resolves journal-instance IDs (run once per season)
-```
+* **Side-by-Side Comparison:** View loot for all specs of a class simultaneously.
+* **Shared Loot Panel:** Quickly identify items that drop for *every* spec (e.g., necks, rings, cloaks).
+* **Smart Highlighting:** Hover over an item to see it light up in every spec panel where it appears.
+* **Difficulty-Aware Tooltips:** Real-time item level previews based on Keystone level (+2 to +10) or Raid difficulty (LFR through Mythic).
+* **Zero Manual Data Maintenance:** Uses an intelligent in-game scraper to pull live data from the Encounter Journal, ensuring item stats and drops are always accurate to the current patch.
+* **Teleport Shortcuts:** Right-click dungeon icons to cast that dungeon's teleport portal (if known).
 
-## Install
-
-1. Copy the inner `SpecLoot/` folder into `World of Warcraft/_retail_/Interface/AddOns/`.
-2. Restart WoW or `/reload`.
-
-The first time you run `/sl` after a fresh install (or after a content patch that bumps `SCRAPE_VERSION`), the addon scrapes the in-game Encounter Journal once to populate its data — takes a second or two and persists in `SpecLootDB` (per-account SavedVariable). Subsequent opens are instant.
+---
 
 ## Usage
 
-### Slash commands
+### Slash Commands
 
-| Command | What it does |
-|---|---|
-| `/specloot` or `/sl` | Toggle the main window |
-| `/sl rescan` | Force a fresh scrape (quiet) |
-| `/sl debug` | Re-scrape with verbose per-encounter output, dumped to a copyable popup |
-| `/sl probe <instanceID> <encounterID>` | Show how many items each difficulty ID returns for one encounter — diagnostic for content-patch breakage |
-| `/sl status` | Print a one-line summary of the cache contents |
-| `/sl help` | List the commands above |
-| **Esc** | Close the main window when it's open |
+| Command | Action |
+| :--- | :--- |
+| `/sl` or `/specloot` | Toggle the main interface |
+| `/sl status` | Check the health of your local loot cache |
+| `/sl rescan` | Force a fresh scrape of the Encounter Journal |
+| `/sl help` | Show all available commands |
+| **Esc** | Close the window |
 
-### Mythic+ view
+### Navigation
 
-- **Keystone dropdown** (top-left) — pick the key level (+2 through +10); end-of-run item-level preview updates accordingly.
-- **Dungeon icons** (top row, 8 tiles) — **left-click** to select a dungeon; **right-click** to cast that dungeon's teleport portal (if your character knows it).
-
-### Raid view
-
-Click the **Raids** tab at the top to switch.
-
-- **Difficulty dropdown** (top-left) — LFR / Normal / Heroic / Mythic. Replaces the keystone dropdown.
-- **Boss tiles** (top row, 9 tiles for current Midnight Season 1) — show every boss across all 3 raids in one row, with the raid abbreviation labeled below each portrait. Click any boss to view its loot.
-- Tooltips show the actual per-item ilvl at the selected difficulty (a trinket from a Mythic boss correctly shows the trinket's bonus over a regular drop, etc.) — these are pulled directly from the journal's per-difficulty links rather than averaged into a single number.
-
-### Class browsing
-
-The class dropdown (top-right) defaults to your current class. Switching to another class lazily classifies that class's spec data via the Encounter Journal (one-time, ~80 ms) and then renders.
+* **Mythic+ View:** Select your Keystone level to see the exact end-of-run item levels. Left-click a dungeon tile to see loot; right-click to teleport.
+* **Raid View:** Switch via the top tabs. Select difficulty (LFR/N/H/M) and click a boss portrait to see their specific loot table broken down by spec.
+* **Class Browsing:** Use the top-right dropdown to view loot for other classes. Spec data is lazily loaded and cached on the fly.
 
 ---
 
-## Keeping the dungeon/raid manifest current
+## Technical Details
 
-Every season Blizzard adds new instances; their journal-instance IDs need to be resolved before the addon can scrape them. The `tools/fetchloot/` Go program handles that — see [its README](tools/fetchloot/README.md) for setup and the `--resolve-all` workflow. You only need to run it when the dungeon/raid lineup changes.
+### Repo Layout
+* `SpecLoot/`: The WoW Addon files.
+    * `SpecLoot.lua`: Core logic, UI frames, and slash commands.
+    * `Data.lua`: Manifests for the current season's dungeons and raids.
+    * `Scraper.lua`: Handles the heavy lifting of querying the Encounter Journal.
+    * `Output.lua`: Copy/paste utility for debug logs.
+* `tools/fetchloot/`: A Go-based utility for developers to resolve new Instance IDs when a new WoW season begins.
 
-The actual loot tables, item slots, icons, and per-class spec mapping all come from the in-game scraper at runtime — there's no hand-curated item data anywhere in the codebase.
+### Developer Diagnostics
+If you are contributing or debugging content-patch breakage:
+* `/sl debug`: Performs a verbose scrape and dumps the output into a copyable text window.
+* `/sl probe <instID> <bossID>`: Diagnoses how many items the API returns for a specific encounter across all difficulties.
+
+---
+
+## Maintenance
+SpecLoot is designed to be "set and forget." Because it scrapes the game client directly, loot table changes by Blizzard are reflected automatically. Developers only need to update `Data.lua` when the dungeon rotation changes (typically once per season). See the [fetchloot README](tools/fetchloot/README.md) for the automation workflow.
