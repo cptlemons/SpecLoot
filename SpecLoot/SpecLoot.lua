@@ -571,7 +571,7 @@ local specBgColors = {
 
 for i = 1, MAX_SPECS do
     local f = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
-    f:SetSize(256, 340)
+    f:SetSize(256, 230)
     f.bg = f:CreateTexture(nil, "BACKGROUND")
     f.bg:SetAllPoints()
     local c = specBgColors[i]
@@ -650,7 +650,7 @@ local function CreateOrReuseItemFrame(pool, index, parent)
     return itemFrame
 end
 
-local function AddItemToPool(pool, parent, index, itemID, bonusId, itemLink, singleColumn)
+local function AddItemToPool(pool, parent, index, itemID, bonusId, itemLink, singleColumn, itemsPerCol)
     local itemFrame = CreateOrReuseItemFrame(pool, index, parent)
 
     itemFrame.itemID = itemID
@@ -677,8 +677,9 @@ local function AddItemToPool(pool, parent, index, itemID, bonusId, itemLink, sin
         itemFrame:ClearAllPoints()
         itemFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -10 - ((index - 1) * 22))
     else
-        local row = math.floor((index - 1) / 2)
-        local col = (index - 1) % 2
+        local maxRows = itemsPerCol or 5
+        local row = (index - 1) % maxRows
+        local col = math.floor((index - 1) / maxRows)
         itemFrame:ClearAllPoints()
         itemFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 10 + (col * 250), -30 - (row * 22))
     end
@@ -705,7 +706,7 @@ local function LayoutSpecFrames(numSpecs)
         if i <= numSpecs then
             local f = specFrames[i]
             f:ClearAllPoints()
-            f:SetSize(panelWidth, 340)
+            f:SetSize(panelWidth, 230)
             f:SetPoint("TOPLEFT", sharedFrame, "BOTTOMLEFT", (i - 1) * (panelWidth + gap), -6)
             f:Show()
         else
@@ -798,6 +799,22 @@ function UpdateLootDisplay()
         table.sort(specItems[i], SortBySlotId)
     end
 
+    
+    local totalShared = #sharedItems
+    -- Figure out the minimum columns needed (still assuming a ~5 item soft cap per column)
+    local numCols = math.max(1, math.ceil(totalShared / 5))
+
+    -- Distribute the items evenly across those columns
+    local sharedItemsPerCol = totalShared > 0 and math.ceil(totalShared / numCols) or 1
+
+    -- Calculate height based on the actual number of rows we'll use
+    local dynamicHeight = math.max(150, 40 + (sharedItemsPerCol * 22))
+    sharedFrame:SetHeight(dynamicHeight)
+
+    -- Shift the main frame height to accommodate
+    local mainHeight = 365 + dynamicHeight
+    mainFrame:SetHeight(mainHeight)
+
     -- For raid mode, prefer the per-(item, difficulty) link captured by the
     -- scraper so each item's tooltip shows its actual ilvl at that difficulty.
     -- Dungeons keep using bonusId (varies by keystone level).
@@ -808,7 +825,7 @@ function UpdateLootDisplay()
     end
 
     for i, itemID in ipairs(sharedItems) do
-        AddItemToPool(sharedDisplayFrames, sharedFrame, i, itemID, bonusId, linkFor(itemID), false)
+        AddItemToPool(sharedDisplayFrames, sharedFrame, i, itemID, bonusId, linkFor(itemID), false, sharedItemsPerCol)
     end
 
     for si = 1, numSpecs do
