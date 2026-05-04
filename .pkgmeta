@@ -1,0 +1,12 @@
+package-as: SpecLoot
+
+move-folders:
+  SpecLoot: SpecLoot
+
+ignore:
+  - tools
+  - .github
+  - .gitignore
+  - README.md
+  - icon.png
+  - LICENSE

@@ -1,4 +1,4 @@
-## Interface: 120001
+## Interface: 120005
 ## Title: SpecLoot
 ## Notes: Compare loot drops across the specs of any class for each Mythic+ dungeon and raid.
 ## Author: You
