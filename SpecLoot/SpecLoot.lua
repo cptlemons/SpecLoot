@@ -799,9 +799,6 @@ function UpdateLootDisplay()
         table.sort(specItems[i], SortBySlotId)
     end
 
-    -- ==========================================
-    -- BEGIN NEW DYNAMIC DISTRIBUTION LOGIC
-    -- ==========================================
     
     local totalShared = #sharedItems
     -- Figure out the minimum columns needed (still assuming a ~5 item soft cap per column)
@@ -817,10 +814,6 @@ function UpdateLootDisplay()
     -- Shift the main frame height to accommodate
     local mainHeight = 365 + dynamicHeight
     mainFrame:SetHeight(mainHeight)
-
-    -- ==========================================
-    -- END NEW DYNAMIC DISTRIBUTION LOGIC
-    -- ==========================================
 
     -- For raid mode, prefer the per-(item, difficulty) link captured by the
     -- scraper so each item's tooltip shows its actual ilvl at that difficulty.
