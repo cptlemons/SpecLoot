@@ -29,9 +29,13 @@ SLASH_SPECLOOT2 = "/sl"
 SlashCmdList["SPECLOOT"] = function(msg)
     msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
     if msg == "rescan" or msg == "scrape" then
+        SpecLootDB = nil
         addonTable.Scraper:Scrape(false)
+        addonTable.Scraper:EnsureClassClassified(selectedClassID)
     elseif msg == "debug" then
+        SpecLootDB = nil
         addonTable.Scraper:Scrape(true)
+        addonTable.Scraper:EnsureClassClassified(selectedClassID)
     elseif msg:match("^probe") then
         local args = {}
         for w in msg:gmatch("%S+") do table.insert(args, w) end
@@ -554,6 +558,28 @@ local sharedTitle = sharedFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal
 sharedTitle:SetPoint("TOP", 0, -5)
 sharedTitle:SetText("Shared Loot")
 
+local warningBanner = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
+warningBanner:SetSize(780, 40)
+warningBanner:SetPoint("BOTTOM", mainFrame, "BOTTOM", 0, 10)
+warningBanner.bg = warningBanner:CreateTexture(nil, "BACKGROUND")
+warningBanner.bg:SetAllPoints()
+warningBanner.bg:SetColorTexture(0.8, 0.1, 0.1, 0.8)
+
+warningBanner.text = warningBanner:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+warningBanner.text:SetPoint("CENTER", -20, 0)
+warningBanner.text:SetText("Warning: Loot database appears incomplete or corrupted. Please rescan to fix.")
+warningBanner.text:SetTextColor(1, 1, 1, 1)
+
+local rescanButton = CreateFrame("Button", nil, warningBanner, "UIPanelButtonTemplate")
+rescanButton:SetSize(80, 22)
+rescanButton:SetPoint("RIGHT", warningBanner, "RIGHT", -10, 0)
+rescanButton:SetText("Rescan")
+rescanButton:SetScript("OnClick", function()
+    SlashCmdList["SPECLOOT"]("rescan")
+end)
+
+warningBanner:Hide()
+
 -----------------------------------------
 -- SPEC FRAMES (bottom section, up to 4)
 -----------------------------------------
@@ -799,8 +825,18 @@ function UpdateLootDisplay()
         table.sort(specItems[i], SortBySlotId)
     end
 
-    
     local totalShared = #sharedItems
+    
+    local displayedItems = totalShared
+    for si = 1, numSpecs do
+        displayedItems = displayedItems + #specItems[si]
+    end
+
+    if viewMode == "dungeon" and (displayedItems == 0 or #lootTable == 0) then
+        warningBanner:Show()
+    else
+        warningBanner:Hide()
+    end
     -- Figure out the minimum columns needed (still assuming a ~5 item soft cap per column)
     local numCols = math.max(1, math.ceil(totalShared / 5))
 
