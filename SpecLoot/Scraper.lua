@@ -4,7 +4,7 @@ local Scraper = {}
 addonTable.Scraper = Scraper
 
 -- Bump this to force a full re-scrape on next login (e.g. after content patches).
-local SCRAPE_VERSION = 12
+local SCRAPE_VERSION = 13
 
 -- Blizzard_EncounterJournal is load-on-demand. Until it's been initialized, the
 -- EJ_* APIs only return items the player has personally encountered, not the
@@ -34,6 +34,35 @@ local function EnsureEJReady()
         LoadAddOn("Blizzard_EncounterJournal")
     end
     ClearLootFilter()
+end
+
+local instanceToTier = {}
+local function SelectInstanceSafely(instanceID)
+    if not next(instanceToTier) then
+        local numTiers = EJ_GetNumTiers and EJ_GetNumTiers() or 0
+        for t = 1, numTiers do
+            if EJ_SelectTier then EJ_SelectTier(t) end
+            local i = 1
+            while true do
+                local id = EJ_GetInstanceByIndex(i, false)
+                if not id then break end
+                instanceToTier[id] = t
+                i = i + 1
+            end
+            i = 1
+            while true do
+                local id = EJ_GetInstanceByIndex(i, true)
+                if not id then break end
+                instanceToTier[id] = t
+                i = i + 1
+            end
+        end
+    end
+    local tier = instanceToTier[instanceID]
+    if tier and EJ_SelectTier then
+        EJ_SelectTier(tier)
+    end
+    EJ_SelectInstance(instanceID)
 end
 
 -- Blizzard difficulty IDs. Modern retail merged "5-player Mythic" and "Mythic+
@@ -121,7 +150,7 @@ end
 -- copyable popup. Pass nil for no diagnostic output.
 local function EnumerateLoot(instanceID, difficultyID, instanceBucket, itemSeen, itemLinks, buf, label)
     ClearLootFilter()
-    EJ_SelectInstance(instanceID)
+    SelectInstanceSafely(instanceID)
     EJ_SetDifficulty(difficultyID) -- pre-set so encounter discovery uses this filter
 
     local total = 0
@@ -240,7 +269,7 @@ local function ClassifyOneClass(results, classID, buf)
     end
 
     local function walkInstance(journalID, encounters, difficultyID, specID)
-        EJ_SelectInstance(journalID)
+        SelectInstanceSafely(journalID)
         for encID in pairs(encounters) do
             EJ_SelectEncounter(encID)
             EJ_SetDifficulty(difficultyID)
@@ -371,7 +400,7 @@ function Scraper:Scrape(verbose)
             -- (it sometimes leads with name/description strings), so we scan every
             -- return value and pick the first plausibly-sized number — display IDs
             -- are >100000, which excludes IDs of encounters/icons/etc.
-            EJ_SelectInstance(raid.journalInstanceId)
+            SelectInstanceSafely(raid.journalInstanceId)
             for encID, enc in pairs(bucket.encounters) do
                 EJ_SelectEncounter(encID)
                 local returns = { EJ_GetCreatureInfo(1, encID) }
@@ -467,7 +496,7 @@ end
 -- difficulty constant actually corresponds to the current-season rotation.
 function Scraper:Probe(instanceID, encounterID)
     EnsureEJReady()
-    EJ_SelectInstance(instanceID)
+    SelectInstanceSafely(instanceID)
     EJ_SelectEncounter(encounterID)
     local lines = {}
     table.insert(lines, string.format("probe: instance=%d encounter=%d", instanceID, encounterID))

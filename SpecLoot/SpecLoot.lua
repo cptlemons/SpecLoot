@@ -560,7 +560,8 @@ sharedTitle:SetText("Shared Loot")
 
 local warningBanner = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
 warningBanner:SetSize(780, 40)
-warningBanner:SetPoint("BOTTOM", mainFrame, "BOTTOM", 0, 10)
+warningBanner:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
+warningBanner:SetFrameLevel(99) -- Just in case to ensure it's above other elements
 warningBanner.bg = warningBanner:CreateTexture(nil, "BACKGROUND")
 warningBanner.bg:SetAllPoints()
 warningBanner.bg:SetColorTexture(0.8, 0.1, 0.1, 0.8)
@@ -833,8 +834,17 @@ function UpdateLootDisplay()
     end
 
     if viewMode == "dungeon" and (displayedItems == 0 or #lootTable == 0) then
-        warningBanner:Show()
+        if not warningBanner.timer then
+            warningBanner.timer = C_Timer.NewTimer(1.0, function()
+                warningBanner:Show()
+                warningBanner.timer = nil
+            end)
+        end
     else
+        if warningBanner.timer then
+            warningBanner.timer:Cancel()
+            warningBanner.timer = nil
+        end
         warningBanner:Hide()
     end
     -- Figure out the minimum columns needed (still assuming a ~5 item soft cap per column)
