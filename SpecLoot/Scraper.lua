@@ -4,7 +4,7 @@ local Scraper = {}
 addonTable.Scraper = Scraper
 
 -- Bump this to force a full re-scrape on next login (e.g. after content patches).
-local SCRAPE_VERSION = 12
+local SCRAPE_VERSION = 13
 
 -- Blizzard_EncounterJournal is load-on-demand. Until it's been initialized, the
 -- EJ_* APIs only return items the player has personally encountered, not the
@@ -18,6 +18,15 @@ local function ClearLootFilter()
     if EJ_SetLootFilter then EJ_SetLootFilter(0, 0) end
 end
 
+local function RestoreCurrentLootFilter()
+    local specIndex = GetSpecialization and GetSpecialization()
+    local specID = specIndex and GetSpecializationInfo and GetSpecializationInfo(specIndex) or 0
+    local _, _, classID = UnitClass("player")
+    if EJ_SetLootFilter and classID then
+        EJ_SetLootFilter(classID, specID)
+    end
+end
+
 local function EnsureEJReady()
     if C_AddOns and C_AddOns.LoadAddOn then
         C_AddOns.LoadAddOn("Blizzard_EncounterJournal")
@@ -25,6 +34,52 @@ local function EnsureEJReady()
         LoadAddOn("Blizzard_EncounterJournal")
     end
     ClearLootFilter()
+end
+
+local oldEJOnEvent
+local function SuppressEJUI()
+    if EncounterJournal and not oldEJOnEvent then
+        oldEJOnEvent = EncounterJournal:GetScript("OnEvent")
+        if oldEJOnEvent then
+            EncounterJournal:SetScript("OnEvent", nil)
+        end
+    end
+end
+
+local function RestoreEJUI()
+    if EncounterJournal and oldEJOnEvent then
+        EncounterJournal:SetScript("OnEvent", oldEJOnEvent)
+        oldEJOnEvent = nil
+    end
+end
+
+local instanceToTier = {}
+local function SelectInstanceSafely(instanceID)
+    if not next(instanceToTier) then
+        local numTiers = EJ_GetNumTiers and EJ_GetNumTiers() or 0
+        for t = 1, numTiers do
+            if EJ_SelectTier then EJ_SelectTier(t) end
+            local i = 1
+            while true do
+                local id = EJ_GetInstanceByIndex(i, false)
+                if not id then break end
+                instanceToTier[id] = t
+                i = i + 1
+            end
+            i = 1
+            while true do
+                local id = EJ_GetInstanceByIndex(i, true)
+                if not id then break end
+                instanceToTier[id] = t
+                i = i + 1
+            end
+        end
+    end
+    local tier = instanceToTier[instanceID]
+    if tier and EJ_SelectTier then
+        EJ_SelectTier(tier)
+    end
+    EJ_SelectInstance(instanceID)
 end
 
 -- Blizzard difficulty IDs. Modern retail merged "5-player Mythic" and "Mythic+
@@ -112,7 +167,7 @@ end
 -- copyable popup. Pass nil for no diagnostic output.
 local function EnumerateLoot(instanceID, difficultyID, instanceBucket, itemSeen, itemLinks, buf, label)
     ClearLootFilter()
-    EJ_SelectInstance(instanceID)
+    SelectInstanceSafely(instanceID)
     EJ_SetDifficulty(difficultyID) -- pre-set so encounter discovery uses this filter
 
     local total = 0
@@ -231,7 +286,7 @@ local function ClassifyOneClass(results, classID, buf)
     end
 
     local function walkInstance(journalID, encounters, difficultyID, specID)
-        EJ_SelectInstance(journalID)
+        SelectInstanceSafely(journalID)
         for encID in pairs(encounters) do
             EJ_SelectEncounter(encID)
             EJ_SetDifficulty(difficultyID)
@@ -273,7 +328,7 @@ local function ClassifyOneClass(results, classID, buf)
 
     results.classifiedClasses = results.classifiedClasses or {}
     results.classifiedClasses[classID] = true
-    ClearLootFilter()
+    RestoreCurrentLootFilter()
 end
 
 -- Public: ensure the spec data for `classID` has been built. No-op if already
@@ -297,7 +352,9 @@ function Scraper:EnsureClassClassified(classID)
 
     C_Timer.After(0, function()
         EnsureEJReady()
+        SuppressEJUI()
         ClassifyOneClass(SpecLootDB, classID, nil)
+        RestoreEJUI()
         -- Notify the UI so the freshly-classified data gets rendered.
         if type(addonTable.OnScrapeComplete) == "function" then
             pcall(addonTable.OnScrapeComplete)
@@ -317,6 +374,7 @@ end
 -- Returns immediately; phase-2 enrichment runs asynchronously as item data arrives.
 function Scraper:Scrape(verbose)
     EnsureEJReady()
+    SuppressEJUI()
 
     local results = {
         scrapeVersion = SCRAPE_VERSION,
@@ -362,7 +420,7 @@ function Scraper:Scrape(verbose)
             -- (it sometimes leads with name/description strings), so we scan every
             -- return value and pick the first plausibly-sized number — display IDs
             -- are >100000, which excludes IDs of encounters/icons/etc.
-            EJ_SelectInstance(raid.journalInstanceId)
+            SelectInstanceSafely(raid.journalInstanceId)
             for encID, enc in pairs(bucket.encounters) do
                 EJ_SelectEncounter(encID)
                 local returns = { EJ_GetCreatureInfo(1, encID) }
@@ -439,7 +497,9 @@ function Scraper:Scrape(verbose)
         table.insert(buf, summary)
         addonTable.Output:Show("Scrape Debug", table.concat(buf, "\n"))
     end
-    return results
+    RestoreCurrentLootFilter()
+    RestoreEJUI()
+    return true
 end
 
 -- Drains the pending-item queue as GET_ITEM_INFO_RECEIVED events arrive.
@@ -457,7 +517,8 @@ end
 -- difficulty constant actually corresponds to the current-season rotation.
 function Scraper:Probe(instanceID, encounterID)
     EnsureEJReady()
-    EJ_SelectInstance(instanceID)
+    SuppressEJUI()
+    SelectInstanceSafely(instanceID)
     EJ_SelectEncounter(encounterID)
     local lines = {}
     table.insert(lines, string.format("probe: instance=%d encounter=%d", instanceID, encounterID))
@@ -485,6 +546,7 @@ function Scraper:Probe(instanceID, encounterID)
         table.insert(lines, string.format("  diff=%-3d (%-40s): %d items   sample: %s",
             d[1], d[2], count, table.concat(sample, ", ")))
     end
+    RestoreEJUI()
     addonTable.Output:Show("Probe", table.concat(lines, "\n"))
 end
 

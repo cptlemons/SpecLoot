@@ -30,8 +30,10 @@ SlashCmdList["SPECLOOT"] = function(msg)
     msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
     if msg == "rescan" or msg == "scrape" then
         addonTable.Scraper:Scrape(false)
+        addonTable.Scraper:EnsureClassClassified(selectedClassID)
     elseif msg == "debug" then
         addonTable.Scraper:Scrape(true)
+        addonTable.Scraper:EnsureClassClassified(selectedClassID)
     elseif msg:match("^probe") then
         local args = {}
         for w in msg:gmatch("%S+") do table.insert(args, w) end
@@ -799,7 +801,6 @@ function UpdateLootDisplay()
         table.sort(specItems[i], SortBySlotId)
     end
 
-    
     local totalShared = #sharedItems
     -- Figure out the minimum columns needed (still assuming a ~5 item soft cap per column)
     local numCols = math.max(1, math.ceil(totalShared / 5))
