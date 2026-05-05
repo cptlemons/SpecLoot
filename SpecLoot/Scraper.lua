@@ -36,6 +36,23 @@ local function EnsureEJReady()
     ClearLootFilter()
 end
 
+local oldEJOnEvent
+local function SuppressEJUI()
+    if EncounterJournal and not oldEJOnEvent then
+        oldEJOnEvent = EncounterJournal:GetScript("OnEvent")
+        if oldEJOnEvent then
+            EncounterJournal:SetScript("OnEvent", nil)
+        end
+    end
+end
+
+local function RestoreEJUI()
+    if EncounterJournal and oldEJOnEvent then
+        EncounterJournal:SetScript("OnEvent", oldEJOnEvent)
+        oldEJOnEvent = nil
+    end
+end
+
 local instanceToTier = {}
 local function SelectInstanceSafely(instanceID)
     if not next(instanceToTier) then
@@ -335,7 +352,9 @@ function Scraper:EnsureClassClassified(classID)
 
     C_Timer.After(0, function()
         EnsureEJReady()
+        SuppressEJUI()
         ClassifyOneClass(SpecLootDB, classID, nil)
+        RestoreEJUI()
         -- Notify the UI so the freshly-classified data gets rendered.
         if type(addonTable.OnScrapeComplete) == "function" then
             pcall(addonTable.OnScrapeComplete)
@@ -353,8 +372,9 @@ end
 
 -- Public entrypoint. Runs the full scrape and stores everything in SpecLootDB.
 -- Returns immediately; phase-2 enrichment runs asynchronously as item data arrives.
-function Scraper:Scrape(verbose, force)
+function Scraper:Scrape(verbose)
     EnsureEJReady()
+    SuppressEJUI()
 
     local results = {
         scrapeVersion = SCRAPE_VERSION,
@@ -443,17 +463,6 @@ function Scraper:Scrape(verbose, force)
         end
     end
 
-    local oldTotal = 0
-    if SpecLootDB and SpecLootDB.itemCache then
-        for _ in pairs(SpecLootDB.itemCache) do oldTotal = oldTotal + 1 end
-    end
-    
-    if not force and oldTotal > 0 and total < (oldTotal * 0.90) then
-        print("|cffa335eeSpecLoot|r Rescan failed sanity check (missing items). Please close any dungeon journals and try again. Reload the UI if that also fails.")
-        RestoreCurrentLootFilter()
-        return false
-    end
-
     SpecLootDB = results
 
     -- Let the UI know fresh data has landed (e.g. so the Raids view can build
@@ -489,6 +498,7 @@ function Scraper:Scrape(verbose, force)
         addonTable.Output:Show("Scrape Debug", table.concat(buf, "\n"))
     end
     RestoreCurrentLootFilter()
+    RestoreEJUI()
     return true
 end
 
@@ -507,6 +517,7 @@ end
 -- difficulty constant actually corresponds to the current-season rotation.
 function Scraper:Probe(instanceID, encounterID)
     EnsureEJReady()
+    SuppressEJUI()
     SelectInstanceSafely(instanceID)
     EJ_SelectEncounter(encounterID)
     local lines = {}
@@ -535,6 +546,7 @@ function Scraper:Probe(instanceID, encounterID)
         table.insert(lines, string.format("  diff=%-3d (%-40s): %d items   sample: %s",
             d[1], d[2], count, table.concat(sample, ", ")))
     end
+    RestoreEJUI()
     addonTable.Output:Show("Probe", table.concat(lines, "\n"))
 end
 

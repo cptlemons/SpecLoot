@@ -28,15 +28,12 @@ SLASH_SPECLOOT1 = "/specloot"
 SLASH_SPECLOOT2 = "/sl"
 SlashCmdList["SPECLOOT"] = function(msg)
     msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-    if msg:match("^rescan") or msg:match("^scrape") then
-        local force = msg:match("force$") ~= nil
-        if addonTable.Scraper:Scrape(false, force) then
-            addonTable.Scraper:EnsureClassClassified(selectedClassID)
-        end
+    if msg == "rescan" or msg == "scrape" then
+        addonTable.Scraper:Scrape(false)
+        addonTable.Scraper:EnsureClassClassified(selectedClassID)
     elseif msg == "debug" then
-        if addonTable.Scraper:Scrape(true, false) then
-            addonTable.Scraper:EnsureClassClassified(selectedClassID)
-        end
+        addonTable.Scraper:Scrape(true)
+        addonTable.Scraper:EnsureClassClassified(selectedClassID)
     elseif msg:match("^probe") then
         local args = {}
         for w in msg:gmatch("%S+") do table.insert(args, w) end
@@ -53,8 +50,7 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "help" or msg == "?" then
         print("|cffa335eeSpecLoot|r commands:")
         print("  /sl                  toggle the main window")
-        print("  /sl rescan           force a fresh scrape (quiet, runs sanity checks)")
-        print("  /sl rescan force     force a fresh scrape AND bypass sanity checks")
+        print("  /sl rescan           force a fresh scrape (quiet)")
         print("  /sl debug            re-scrape with per-encounter verbose output")
         print("  /sl probe <i> <e>    try every difficulty ID against one (instance, encounter)")
         print("  /sl status           print scrape cache summary")
@@ -560,29 +556,6 @@ local sharedTitle = sharedFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal
 sharedTitle:SetPoint("TOP", 0, -5)
 sharedTitle:SetText("Shared Loot")
 
-local warningBanner = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
-warningBanner:SetSize(780, 40)
-warningBanner:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
-warningBanner:SetFrameLevel(99) -- Just in case to ensure it's above other elements
-warningBanner.bg = warningBanner:CreateTexture(nil, "BACKGROUND")
-warningBanner.bg:SetAllPoints()
-warningBanner.bg:SetColorTexture(0.8, 0.1, 0.1, 0.8)
-
-warningBanner.text = warningBanner:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-warningBanner.text:SetPoint("CENTER", -20, 0)
-warningBanner.text:SetText("Warning: Loot database appears incomplete or corrupted. Please rescan to fix.")
-warningBanner.text:SetTextColor(1, 1, 1, 1)
-
-local rescanButton = CreateFrame("Button", nil, warningBanner, "UIPanelButtonTemplate")
-rescanButton:SetSize(80, 22)
-rescanButton:SetPoint("RIGHT", warningBanner, "RIGHT", -10, 0)
-rescanButton:SetText("Rescan")
-rescanButton:SetScript("OnClick", function()
-    SlashCmdList["SPECLOOT"]("rescan")
-end)
-
-warningBanner:Hide()
-
 -----------------------------------------
 -- SPEC FRAMES (bottom section, up to 4)
 -----------------------------------------
@@ -829,26 +802,6 @@ function UpdateLootDisplay()
     end
 
     local totalShared = #sharedItems
-    
-    local displayedItems = totalShared
-    for si = 1, numSpecs do
-        displayedItems = displayedItems + #specItems[si]
-    end
-
-    if viewMode == "dungeon" and (displayedItems == 0 or #lootTable == 0) then
-        if not warningBanner.timer then
-            warningBanner.timer = C_Timer.NewTimer(1.0, function()
-                warningBanner:Show()
-                warningBanner.timer = nil
-            end)
-        end
-    else
-        if warningBanner.timer then
-            warningBanner.timer:Cancel()
-            warningBanner.timer = nil
-        end
-        warningBanner:Hide()
-    end
     -- Figure out the minimum columns needed (still assuming a ~5 item soft cap per column)
     local numCols = math.max(1, math.ceil(totalShared / 5))
 
@@ -888,7 +841,7 @@ end
 -- cache. Subsequent opens are instant.
 mainFrame:SetScript("OnShow", function()
     if not addonTable.Scraper:IsCacheFresh() then
-        addonTable.Scraper:Scrape(false, true)
+        addonTable.Scraper:Scrape(false)
     end
     addonTable.Scraper:EnsureClassClassified(selectedClassID)
     PreloadAllItems()
