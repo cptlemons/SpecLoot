@@ -18,6 +18,15 @@ local function ClearLootFilter()
     if EJ_SetLootFilter then EJ_SetLootFilter(0, 0) end
 end
 
+local function RestoreCurrentLootFilter()
+    local specIndex = GetSpecialization and GetSpecialization()
+    local specID = specIndex and GetSpecializationInfo and GetSpecializationInfo(specIndex) or 0
+    local _, _, classID = UnitClass("player")
+    if EJ_SetLootFilter and classID then
+        EJ_SetLootFilter(classID, specID)
+    end
+end
+
 local function EnsureEJReady()
     if C_AddOns and C_AddOns.LoadAddOn then
         C_AddOns.LoadAddOn("Blizzard_EncounterJournal")
@@ -273,7 +282,7 @@ local function ClassifyOneClass(results, classID, buf)
 
     results.classifiedClasses = results.classifiedClasses or {}
     results.classifiedClasses[classID] = true
-    ClearLootFilter()
+    RestoreCurrentLootFilter()
 end
 
 -- Public: ensure the spec data for `classID` has been built. No-op if already
@@ -439,6 +448,7 @@ function Scraper:Scrape(verbose)
         table.insert(buf, summary)
         addonTable.Output:Show("Scrape Debug", table.concat(buf, "\n"))
     end
+    RestoreCurrentLootFilter()
     return results
 end
 
