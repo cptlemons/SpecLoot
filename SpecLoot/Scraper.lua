@@ -353,7 +353,7 @@ end
 
 -- Public entrypoint. Runs the full scrape and stores everything in SpecLootDB.
 -- Returns immediately; phase-2 enrichment runs asynchronously as item data arrives.
-function Scraper:Scrape(verbose)
+function Scraper:Scrape(verbose, force)
     EnsureEJReady()
 
     local results = {
@@ -443,6 +443,17 @@ function Scraper:Scrape(verbose)
         end
     end
 
+    local oldTotal = 0
+    if SpecLootDB and SpecLootDB.itemCache then
+        for _ in pairs(SpecLootDB.itemCache) do oldTotal = oldTotal + 1 end
+    end
+    
+    if not force and oldTotal > 0 and total < (oldTotal * 0.90) then
+        print("|cffa335eeSpecLoot|r Rescan failed sanity check (missing items). Please close any dungeon journals and try again. Reload the UI if that also fails.")
+        RestoreCurrentLootFilter()
+        return false
+    end
+
     SpecLootDB = results
 
     -- Let the UI know fresh data has landed (e.g. so the Raids view can build
@@ -478,7 +489,7 @@ function Scraper:Scrape(verbose)
         addonTable.Output:Show("Scrape Debug", table.concat(buf, "\n"))
     end
     RestoreCurrentLootFilter()
-    return results
+    return true
 end
 
 -- Drains the pending-item queue as GET_ITEM_INFO_RECEIVED events arrive.

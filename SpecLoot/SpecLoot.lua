@@ -28,14 +28,15 @@ SLASH_SPECLOOT1 = "/specloot"
 SLASH_SPECLOOT2 = "/sl"
 SlashCmdList["SPECLOOT"] = function(msg)
     msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-    if msg == "rescan" or msg == "scrape" then
-        SpecLootDB = nil
-        addonTable.Scraper:Scrape(false)
-        addonTable.Scraper:EnsureClassClassified(selectedClassID)
+    if msg:match("^rescan") or msg:match("^scrape") then
+        local force = msg:match("force$") ~= nil
+        if addonTable.Scraper:Scrape(false, force) then
+            addonTable.Scraper:EnsureClassClassified(selectedClassID)
+        end
     elseif msg == "debug" then
-        SpecLootDB = nil
-        addonTable.Scraper:Scrape(true)
-        addonTable.Scraper:EnsureClassClassified(selectedClassID)
+        if addonTable.Scraper:Scrape(true, false) then
+            addonTable.Scraper:EnsureClassClassified(selectedClassID)
+        end
     elseif msg:match("^probe") then
         local args = {}
         for w in msg:gmatch("%S+") do table.insert(args, w) end
@@ -52,7 +53,8 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "help" or msg == "?" then
         print("|cffa335eeSpecLoot|r commands:")
         print("  /sl                  toggle the main window")
-        print("  /sl rescan           force a fresh scrape (quiet)")
+        print("  /sl rescan           force a fresh scrape (quiet, runs sanity checks)")
+        print("  /sl rescan force     force a fresh scrape AND bypass sanity checks")
         print("  /sl debug            re-scrape with per-encounter verbose output")
         print("  /sl probe <i> <e>    try every difficulty ID against one (instance, encounter)")
         print("  /sl status           print scrape cache summary")
@@ -886,7 +888,7 @@ end
 -- cache. Subsequent opens are instant.
 mainFrame:SetScript("OnShow", function()
     if not addonTable.Scraper:IsCacheFresh() then
-        addonTable.Scraper:Scrape(false)
+        addonTable.Scraper:Scrape(false, true)
     end
     addonTable.Scraper:EnsureClassClassified(selectedClassID)
     PreloadAllItems()
