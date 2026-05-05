@@ -74,6 +74,7 @@ addonTable.SlotNames = {
     [11] = "Off-hand",
     [12] = "Ring",
     [13] = "Trinket",
+    [20] = "Token",
 }
 -- Source 3: Dungeon Database
 -- journalInstanceId is the ID Scraper.lua passes to EJ_SelectInstance — also what

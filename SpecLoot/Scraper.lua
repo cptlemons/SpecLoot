@@ -124,10 +124,26 @@ local INVTYPE_TO_SLOTID = {
     INVTYPE_TRINKET         = 13,
 }
 
-local function GetSlotId(itemID)
+local function GetSlotId(itemID, itemLinks)
     local _, _, _, equipLoc = C_Item.GetItemInfoInstant(itemID)
-    if not equipLoc or equipLoc == "" then return nil end
-    return INVTYPE_TO_SLOTID[equipLoc]
+    if equipLoc and INVTYPE_TO_SLOTID[equipLoc] then
+        return INVTYPE_TO_SLOTID[equipLoc]
+    end
+    
+    -- Not a standard slot. Check the scaled item level from the journal link.
+    local links = itemLinks and itemLinks[itemID]
+    local sampleLink = links and select(2, next(links))
+    
+    local ilvl = 0
+    if sampleLink and C_Item.GetDetailedItemLevelInfo then
+        ilvl = C_Item.GetDetailedItemLevelInfo(sampleLink) or 0
+    end
+    
+    if ilvl >= 243 then
+        return 20 -- Token slot
+    end
+    
+    return 14 -- Filtered out
 end
 
 -- C_Item.GetItemSpecInfo returns a flat array of spec IDs (e.g. { 1480, 581, 577 }).
@@ -234,8 +250,8 @@ end
 -- Phase 2: enrich the item cache for every itemID we collected. Items not yet loaded
 -- are queued and resolved when GET_ITEM_INFO_RECEIVED fires.
 local pendingItems
-local function ResolveItem(itemID, fallbackIcon, itemCache)
-    local slotId = GetSlotId(itemID)
+local function ResolveItem(itemID, fallbackIcon, itemCache, itemLinks)
+    local slotId = GetSlotId(itemID, itemLinks)
     if not slotId then
         return false -- item not yet loaded; try again later
     end
@@ -382,10 +398,11 @@ function Scraper:Scrape(verbose)
         dungeons      = {},
         raids         = {},
         itemCache     = {},
+        itemLinks     = {},
     }
 
     local itemSeen  = {} -- itemID -> icon from journal
-    local itemLinks = {} -- itemID -> { [difficultyID] = link }
+    local itemLinks = results.itemLinks -- itemID -> { [difficultyID] = link }
     local buf = verbose and {} or nil
 
     if buf then
@@ -447,7 +464,7 @@ function Scraper:Scrape(verbose)
     local resolved, total = 0, 0
     for itemID, icon in pairs(itemSeen) do
         total = total + 1
-        if ResolveItem(itemID, icon, results.itemCache) then
+        if ResolveItem(itemID, icon, results.itemCache, itemLinks) then
             resolved = resolved + 1
         else
             pendingItems[itemID] = icon
@@ -507,7 +524,10 @@ function Scraper:OnItemInfoReceived(itemID)
     if not pendingItems then return end
     local icon = pendingItems[itemID]
     if icon == nil then return end
-    if SpecLootDB and ResolveItem(itemID, icon, SpecLootDB.itemCache) then
+    if SpecLootDB and ResolveItem(itemID, icon, SpecLootDB.itemCache, SpecLootDB.itemLinks) then
+        if SpecLootDB.itemLinks and SpecLootDB.itemLinks[itemID] then
+            SpecLootDB.itemCache[itemID].links = SpecLootDB.itemLinks[itemID]
+        end
         pendingItems[itemID] = nil
     end
 end
