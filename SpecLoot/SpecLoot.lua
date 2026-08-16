@@ -12,7 +12,7 @@ local selectedClassID = select(3, UnitClass("player"))
 
 -- Main Frame
 local mainFrame = CreateFrame("Frame", "SpecLootMainFrame", UIParent, "BasicFrameTemplateWithInset")
-mainFrame:SetSize(800, 625)
+mainFrame:SetSize(800, 630)
 mainFrame:SetPoint("CENTER")
 mainFrame:SetMovable(true)
 mainFrame:EnableMouse(true)
@@ -24,6 +24,11 @@ mainFrame:Hide()
 
 tinsert(UISpecialFrames, "SpecLootMainFrame")
 
+local function InitCharDB()
+    SpecLootCharDB = SpecLootCharDB or {}
+    SpecLootCharDB.receivedItems = SpecLootCharDB.receivedItems or {}
+end
+
 SLASH_SPECLOOT1 = "/specloot"
 SLASH_SPECLOOT2 = "/sl"
 SlashCmdList["SPECLOOT"] = function(msg)
@@ -34,6 +39,13 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "debug" then
         addonTable.Scraper:Scrape(true)
         addonTable.Scraper:EnsureClassClassified(selectedClassID)
+    elseif msg == "clear" or msg == "reset" or msg == "clearrolls" or msg == "resetrolls" then
+        InitCharDB()
+        SpecLootCharDB.receivedItems = {}
+        if mainFrame:IsShown() then
+            UpdateLootDisplay()
+        end
+        print("|cffa335eeSpecLoot|r: Cleared all marked bonus roll items for this character.")
     elseif msg:match("^probe") then
         local args = {}
         for w in msg:gmatch("%S+") do table.insert(args, w) end
@@ -50,6 +62,7 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "help" or msg == "?" then
         print("|cffa335eeSpecLoot|r commands:")
         print("  /sl                  toggle the main window")
+        print("  /sl clear            reset marked bonus rolls for this character")
         print("  /sl rescan           force a fresh scrape (quiet)")
         print("  /sl debug            re-scrape with per-encounter verbose output")
         print("  /sl probe <i> <e>    try every difficulty ID against one (instance, encounter)")
@@ -128,7 +141,7 @@ local function GetEndOfRunInfo(keystoneLevel)
             end
         end
     end
-    return 266, 12795, "hero", 3
+    return 311, 12843, "hero", 3
 end
 
 local function GetRaidDifficultyInfo(difficultyID)
@@ -136,6 +149,32 @@ local function GetRaidDifficultyInfo(difficultyID)
         if d.id == difficultyID then return d end
     end
     return raidDifficulties[1]
+end
+
+local function GetRaidBonusId(difficultyID, bossEncID)
+    local diffKey = "heroic"
+    for _, d in ipairs(raidDifficulties) do
+        if d.id == difficultyID then diffKey = d.key; break end
+    end
+
+    local bossIndex = 1
+    if bossEncID and addonTable.RaidDatabase then
+        for _, raid in ipairs(addonTable.RaidDatabase) do
+            for idx, enc in ipairs(raid.encounters or {}) do
+                if enc.id == bossEncID then
+                    bossIndex = enc.index or idx
+                    break
+                end
+            end
+        end
+    end
+
+    local rank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
+    local track = addonTable.RaidTracks and addonTable.RaidTracks[diffKey]
+    if track and track[rank] then
+        return track[rank].bonusId
+    end
+    return 12841
 end
 
 local function GetTrackLabel(track, rank)
@@ -151,6 +190,30 @@ end
 
 local function GetItemData(itemID)
     return addonTable.Scraper:GetItemData(itemID)
+end
+
+local function IsItemAllowed(itemID)
+    if itemID == 270909 then
+        return true -- Omni token Slumbering Coil Curio
+    end
+    if itemID == 258045 or itemID == 279118 or itemID == 275658 or itemID == 256625 then
+        return false -- Filter out Dawnblade's Glaives (cosmetic weapon), Lost Explorers' Mailbox, Primeval Skyfriend, Hexwoven Strand
+    end
+    local itemData = GetItemData(itemID)
+    if not itemData then return false end
+    if itemData.slotId == 14 or itemData.slotId == 99 or itemData.isCosmetic or itemData.isBonusLoot or itemData.filterType == 5 then
+        return false -- Filter out mounts, recipes, toys, fluff curios, cosmetics, bonus loot
+    end
+    if C_Item and C_Item.GetItemInfoInstant then
+        local _, _, _, equipLoc, _, classID, subclassID = C_Item.GetItemInfoInstant(itemID)
+        if equipLoc == "INVTYPE_COSMETIC" or equipLoc == "INVTYPE_NON_EQUIP" then
+            return false
+        end
+        if classID == 4 and subclassID == 5 then -- Armor class 4, Cosmetic subclass 5
+            return false
+        end
+    end
+    return true
 end
 
 local function DoesItemDropForSpec(itemID, classID, specID)
@@ -226,9 +289,22 @@ end
 -- TOP ROW: DROPDOWNS
 -----------------------------------------
 
+local function AdjustDropdownText(dropdown)
+    local text = _G[dropdown:GetName() .. "Text"] or dropdown.Text
+    if text then
+        local point, relTo, relPoint, x, y = text:GetPoint(1)
+        if point then
+            text:ClearAllPoints()
+            text:SetPoint(point, relTo, relPoint, x, (y or 2) - 2)
+        end
+    end
+end
+
 local keystoneDropdown = CreateFrame("Frame", "SpecLootKeystoneDropdown", mainFrame, "UIDropDownMenuTemplate")
-keystoneDropdown:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", -8, -24)
-UIDropDownMenu_SetWidth(keystoneDropdown, 70)
+keystoneDropdown:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", -12, -20)
+UIDropDownMenu_SetWidth(keystoneDropdown, 75)
+UIDropDownMenu_JustifyText(keystoneDropdown, "CENTER")
+AdjustDropdownText(keystoneDropdown)
 
 UIDropDownMenu_Initialize(keystoneDropdown, function(self, level, menuList)
     for ks = 2, 10 do
@@ -252,8 +328,10 @@ UIDropDownMenu_SetText(keystoneDropdown, "+10 (" .. defaultIlvl .. ")")
 
 -- Difficulty dropdown — replaces keystone in raid mode, same screen position.
 local difficultyDropdown = CreateFrame("Frame", "SpecLootDifficultyDropdown", mainFrame, "UIDropDownMenuTemplate")
-difficultyDropdown:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", -8, -24)
-UIDropDownMenu_SetWidth(difficultyDropdown, 100)
+difficultyDropdown:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", -12, -20)
+UIDropDownMenu_SetWidth(difficultyDropdown, 75)
+UIDropDownMenu_JustifyText(difficultyDropdown, "CENTER")
+AdjustDropdownText(difficultyDropdown)
 difficultyDropdown:Hide()
 
 UIDropDownMenu_Initialize(difficultyDropdown, function(self, level, menuList)
@@ -274,8 +352,10 @@ UIDropDownMenu_SetText(difficultyDropdown, GetRaidDifficultyInfo(selectedRaidDif
 
 -- Class dropdown (top-right)
 local classDropdown = CreateFrame("Frame", "SpecLootClassDropdown", mainFrame, "UIDropDownMenuTemplate")
-classDropdown:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", 8, -24)
-UIDropDownMenu_SetWidth(classDropdown, 120) -- Slightly wider to fit the icon nicely
+classDropdown:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", 2, -20)
+UIDropDownMenu_SetWidth(classDropdown, 120)
+UIDropDownMenu_JustifyText(classDropdown, "CENTER")
+AdjustDropdownText(classDropdown)
 
 local CLASS_COLORS = {
     WARRIOR     = { 0.78, 0.61, 0.43 },
@@ -336,7 +416,7 @@ local dungeonButtons = {}
 local iconSize = 64
 local iconGap = 4
 local totalIconsWidth = (#dungeons * iconSize) + ((#dungeons - 1) * iconGap)
-local dungeonRowY = -52
+local dungeonRowY = -57
 
 -- Anchor container for centering: first icon offset from TOP center
 local firstIconX = -totalIconsWidth / 2
@@ -494,20 +574,117 @@ end
 -- VIEW MODE: M+ / Raid TABS
 -----------------------------------------
 
+local isBonusRollMode = false
+
+local function GetBonusRollTrackInfo(vMode, keystoneLevel, raidDifficulty, bossEncID)
+    if vMode == "dungeon" then
+        local rule
+        for _, r in ipairs(addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules or {}) do
+            for _, k in ipairs(r.keystones) do
+                if k == keystoneLevel then rule = r; break end
+            end
+            if rule then break end
+        end
+        if not rule then
+            rule = addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules and addonTable.KeystoneMapping.rules[#addonTable.KeystoneMapping.rules]
+        end
+        local gv = rule and rule.greatVault or { track = "myth", rank = 1 }
+        local trackName = gv.track
+        local rank = gv.rank
+        local trackData = addonTable.UpgradeTracks and addonTable.UpgradeTracks[trackName]
+        local maxRank = trackData and #trackData or 6
+        local ilvl = trackData and trackData[rank] and trackData[rank].ilvl or 318
+        local bonusId = trackData and trackData[rank] and trackData[rank].bonusId or 12849
+
+        local shortTrack = trackName:sub(1, 1):upper() .. trackName:sub(2)
+        local trackLabel = rank .. "/" .. maxRank .. " " .. shortTrack
+        return ilvl, bonusId, trackLabel
+    else
+        local bossIndex = 1
+        if bossEncID and addonTable.RaidDatabase then
+            for _, raid in ipairs(addonTable.RaidDatabase) do
+                for idx, enc in ipairs(raid.encounters or {}) do
+                    if enc.id == bossEncID then
+                        bossIndex = enc.index or idx
+                        break
+                    end
+                end
+            end
+        end
+        local bossRank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
+
+        local ilvl, bonusId, trackLabel
+        if raidDifficulty == 17 then
+            -- LFR -> Normal / Champ track
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["normal"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 292
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12833
+            trackLabel = bossRank .. "/6 Champ"
+        elseif raidDifficulty == 14 then
+            -- Normal -> Heroic / Hero track
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["heroic"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 305
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12841
+            trackLabel = bossRank .. "/6 Hero"
+        elseif raidDifficulty == 15 then
+            -- Heroic -> Mythic / Myth track (1/6 Myth .. 4/6 Myth)
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["mythic"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 318
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12849
+            trackLabel = bossRank .. "/6 Myth"
+        else
+            -- Mythic (16) -> 6/6 Myth or 9/6 Myth
+            if bossRank >= 3 then
+                ilvl = 334
+                bonusId = 12854
+                trackLabel = "9/6 Myth"
+            else
+                ilvl = 334
+                bonusId = 12854
+                trackLabel = "6/6 Myth"
+            end
+        end
+
+        return ilvl, bonusId, trackLabel
+    end
+end
+
 local mythicTab = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
 mythicTab:SetSize(80, 22)
 mythicTab:SetText("Mythic+")
-mythicTab:SetPoint("TOP", mainFrame, "TOP", -42, -24)
+mythicTab:SetPoint("TOP", mainFrame, "TOP", -42, -26)
 
 local raidTab = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
 raidTab:SetSize(80, 22)
 raidTab:SetText("Raids")
-raidTab:SetPoint("TOP", mainFrame, "TOP", 42, -24)
+raidTab:SetPoint("TOP", mainFrame, "TOP", 42, -26)
+
+local bonusRollCheckbox = CreateFrame("CheckButton", "SpecLootBonusRollCheckbox", mainFrame, "UICheckButtonTemplate")
+bonusRollCheckbox:SetPoint("RIGHT", classDropdown, "LEFT", -75, 0)
+bonusRollCheckbox:SetSize(24, 24)
+
+bonusRollCheckbox.text = bonusRollCheckbox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+bonusRollCheckbox.text:SetPoint("LEFT", bonusRollCheckbox, "RIGHT", 4, 0)
+bonusRollCheckbox.text:SetText("Bonus Rolls")
 
 local function UpdateTabHighlight()
     mythicTab:SetAlpha(viewMode == "dungeon" and 1.0 or 0.55)
     raidTab:SetAlpha(viewMode == "raid"    and 1.0 or 0.55)
 end
+
+bonusRollCheckbox:SetScript("OnClick", function(self)
+    isBonusRollMode = self:GetChecked() and true or false
+    UpdateLootDisplay()
+end)
+
+bonusRollCheckbox:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:SetText("Bonus Rolls Mode")
+    GameTooltip:AddLine("Show Great Vault / Bonus Roll tracks for each spec.", 1, 1, 1)
+    GameTooltip:AddLine("Right-click items to mark as received / obtained.", 0.7, 0.7, 0.7)
+    GameTooltip:Show()
+end)
+bonusRollCheckbox:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 local function SetViewMode(mode)
     viewMode = mode
@@ -599,11 +776,38 @@ end
 local sharedDisplayFrames = {}
 
 local function ClearAllDisplayFrames()
-    for _, f in ipairs(sharedDisplayFrames) do f:Hide() end
+    for _, f in ipairs(sharedDisplayFrames) do
+        f:Hide()
+        if f.strikeLine then f.strikeLine:Hide() end
+    end
     for si = 1, MAX_SPECS do
-        for _, f in ipairs(specDisplayFrames[si]) do f:Hide() end
+        for _, f in ipairs(specDisplayFrames[si]) do
+            f:Hide()
+            if f.strikeLine then f.strikeLine:Hide() end
+        end
     end
     ClearRegistry()
+end
+
+local function UpdateItemReceivedVisuals(itemFrame, isReceived)
+    itemFrame.isReceived = isReceived
+    if isBonusRollMode and isReceived then
+        itemFrame.icon:SetDesaturated(true)
+        itemFrame.icon:SetAlpha(0.35)
+        itemFrame.text:SetAlpha(0.40)
+        if itemFrame.strikeLine then
+            local textWidth = itemFrame.text:GetStringWidth() or 100
+            itemFrame.strikeLine:SetWidth(math.min(textWidth + 4, 215))
+            itemFrame.strikeLine:Show()
+        end
+    else
+        itemFrame.icon:SetDesaturated(false)
+        itemFrame.icon:SetAlpha(1.0)
+        itemFrame.text:SetAlpha(1.0)
+        if itemFrame.strikeLine then
+            itemFrame.strikeLine:Hide()
+        end
+    end
 end
 
 local function CreateOrReuseItemFrame(pool, index, parent)
@@ -611,6 +815,7 @@ local function CreateOrReuseItemFrame(pool, index, parent)
     if not itemFrame then
         itemFrame = CreateFrame("Button", nil, parent)
         itemFrame:SetSize(240, 20)
+        itemFrame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
         itemFrame.icon = itemFrame:CreateTexture(nil, "ARTWORK")
         itemFrame.icon:SetSize(18, 18)
@@ -622,18 +827,54 @@ local function CreateOrReuseItemFrame(pool, index, parent)
         itemFrame.text:SetWordWrap(false)
         itemFrame.text:SetJustifyH("LEFT")
 
+        itemFrame.strikeLine = itemFrame:CreateTexture(nil, "OVERLAY", nil, 7)
+        itemFrame.strikeLine:SetHeight(1.5)
+        itemFrame.strikeLine:SetPoint("LEFT", itemFrame.text, "LEFT", -1, 0)
+        itemFrame.strikeLine:SetColorTexture(0.75, 0.75, 0.75, 0.85)
+        itemFrame.strikeLine:Hide()
+
         itemFrame.dupHighlight = itemFrame:CreateTexture(nil, "BACKGROUND")
         itemFrame.dupHighlight:SetPoint("TOPLEFT", -2, 1)
         itemFrame.dupHighlight:SetPoint("BOTTOMRIGHT", 2, -1)
         itemFrame.dupHighlight:SetColorTexture(1, 1, 1, 0.15)
         itemFrame.dupHighlight:Hide()
 
+        itemFrame:SetScript("OnClick", function(self, button)
+            if button == "RightButton" and isBonusRollMode then
+                InitCharDB()
+                local key = (self.specID or 0) .. ":" .. self.itemID
+                local isReceived = not SpecLootCharDB.receivedItems[key]
+                SpecLootCharDB.receivedItems[key] = isReceived and true or nil
+
+                local itemName = C_Item.GetItemInfo(self.itemID) or "Loading..."
+                local slotName = GetSlotName(self.itemID)
+                local labelStr = self.trackLabel and ("|cff55ff55" .. self.trackLabel .. "|r") or ""
+                if isReceived then
+                    self.text:SetText("|cff888888" .. itemName .. "|r |cff666666" .. slotName .. "|r " .. labelStr)
+                else
+                    self.text:SetText("|cffa335ee" .. itemName .. "|r |cff888888" .. slotName .. "|r " .. labelStr)
+                end
+                UpdateItemReceivedVisuals(self, isReceived)
+            end
+        end)
+
         itemFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            -- Prefer the precomputed link (raids: encodes per-difficulty ilvl).
-            -- Fall back to BuildItemLink with the dungeon's keystone bonus ID.
             local link = self.itemLink or BuildItemLink(self.itemID, self.bonusId)
             GameTooltip:SetHyperlink(link)
+            if isBonusRollMode then
+                InitCharDB()
+                local key = (self.specID or 0) .. ":" .. self.itemID
+                local isRec = SpecLootCharDB.receivedItems[key]
+                GameTooltip:AddLine(" ")
+                if isRec then
+                    GameTooltip:AddLine("|cff777777Status: OBTAINED / RECEIVED|r")
+                    GameTooltip:AddLine("|cffaaaaaaRight-click to return to Bonus Roll rotation|r")
+                else
+                    GameTooltip:AddLine("|cff00ff00Status: IN ROTATION|r")
+                    GameTooltip:AddLine("|cffffd100Right-click to mark as RECEIVED|r")
+                end
+            end
             GameTooltip:Show()
             HighlightDuplicates(self.itemID)
         end)
@@ -652,28 +893,42 @@ local function CreateOrReuseItemFrame(pool, index, parent)
     return itemFrame
 end
 
-local function AddItemToPool(pool, parent, index, itemID, bonusId, itemLink, singleColumn, itemsPerCol)
+local function AddItemToPool(pool, parent, index, itemID, bonusId, itemLink, singleColumn, itemsPerCol, trackLabel, specID)
     local itemFrame = CreateOrReuseItemFrame(pool, index, parent)
 
     itemFrame.itemID = itemID
+    itemFrame.specID = specID
     itemFrame.bonusId = bonusId
-    itemFrame.itemLink = itemLink -- nil for dungeons; raid links are pre-scaled to the chosen difficulty
+    itemFrame.itemLink = itemLink
+    itemFrame.trackLabel = trackLabel
 
     local itemName = C_Item.GetItemInfo(itemID)
     local itemData = GetItemData(itemID)
-    -- Try cache first, then fresh lookup, then questionmark placeholder.
     local dbIcon = (itemData and itemData.icon) or C_Item.GetItemIconByID(itemID)
     local slotName = GetSlotName(itemID)
 
-    -- Use epic purple color (|cffa335ee|) instead of the base item link color
-    if itemName then
-        itemFrame.text:SetText("|cffa335ee" .. itemName .. "|r |cff888888" .. slotName .. "|r")
+    InitCharDB()
+    local key = (specID or 0) .. ":" .. itemID
+    local isReceived = SpecLootCharDB.receivedItems and SpecLootCharDB.receivedItems[key]
+
+    if isBonusRollMode then
+        local labelStr = trackLabel and ("|cff55ff55" .. trackLabel .. "|r") or ""
+        if isReceived then
+            itemFrame.text:SetText("|cff888888" .. (itemName or "Loading...") .. "|r |cff666666" .. slotName .. "|r " .. labelStr)
+        else
+            itemFrame.text:SetText("|cffa335ee" .. (itemName or "Loading...") .. "|r |cff888888" .. slotName .. "|r " .. labelStr)
+        end
     else
-        itemFrame.text:SetText("|cffa335eeLoading...|r |cff888888" .. slotName .. "|r")
-        C_Item.RequestLoadItemDataByID(itemID)
+        if itemName then
+            itemFrame.text:SetText("|cffa335ee" .. itemName .. "|r |cff888888" .. slotName .. "|r")
+        else
+            itemFrame.text:SetText("|cffa335eeLoading...|r |cff888888" .. slotName .. "|r")
+        end
     end
     itemFrame.icon:SetTexture(dbIcon or 134400)
     itemFrame.dupHighlight:Hide()
+
+    UpdateItemReceivedVisuals(itemFrame, isReceived)
 
     if singleColumn then
         itemFrame:ClearAllPoints()
@@ -704,12 +959,24 @@ local function LayoutSpecFrames(numSpecs)
         panelWidth = (totalWidth - (gap * 2)) / 3
     end
 
+    local startX = (mainFrame:GetWidth() - totalWidth) / 2
+    if startX <= 0 then startX = 10 end
+
     for i = 1, MAX_SPECS do
         if i <= numSpecs then
             local f = specFrames[i]
             f:ClearAllPoints()
-            f:SetSize(panelWidth, 230)
-            f:SetPoint("TOPLEFT", sharedFrame, "BOTTOMLEFT", (i - 1) * (panelWidth + gap), -6)
+            local offsetX = (i - 1) * (panelWidth + gap)
+
+            if isBonusRollMode then
+                f:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", startX + offsetX, dungeonRowY - iconSize - 12)
+                f:SetPoint("BOTTOMLEFT", mainFrame, "BOTTOMLEFT", startX + offsetX, 8)
+                f:SetWidth(panelWidth)
+            else
+                f:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", startX + offsetX, (dungeonRowY - iconSize - 6) - sharedFrame:GetHeight() - 6)
+                f:SetPoint("BOTTOMLEFT", mainFrame, "BOTTOMLEFT", startX + offsetX, 8)
+                f:SetWidth(panelWidth)
+            end
             f:Show()
         else
             specFrames[i]:Hide()
@@ -741,30 +1008,32 @@ function UpdateLootDisplay()
 
     if numSpecs == 0 then return end
 
-    LayoutSpecFrames(numSpecs)
-
-    for i, spec in ipairs(specs) do
-        specFrames[i].title:SetText(spec.name)
-        specFrames[i].specIcon:SetTexture(spec.icon)
-    end
-
-    -- Resolve the loot table + bonusId based on the active view.
-    -- Dungeons: bonusId comes from the M+ keystone level, applied via BuildItemLink.
-    -- Raids:    each item has its own per-difficulty link captured at scrape time;
-    --           bonusId is unused (handled per-item via linkFor below).
     local lootTable, bonusId
     if viewMode == "dungeon" then
         local dungeonData = dungeons[currentDungeonIndex]
         _, bonusId = GetEndOfRunInfo(selectedKeystoneLevel)
-        lootTable = addonTable.Scraper:GetDungeonLootTable(dungeonData.journalInstanceId)
+        lootTable = dungeonData and dungeonData.lootTable or addonTable.Scraper:GetDungeonLootTable(dungeonData.journalInstanceId)
     else
         lootTable = {}
-        if currentBossEncID and SpecLootDB and SpecLootDB.raids then
-            for _, raid in ipairs(raids) do
-                local instance = SpecLootDB.raids[raid.journalInstanceId]
-                if instance and instance.encounters and instance.encounters[currentBossEncID] then
-                    lootTable = instance.encounters[currentBossEncID].items or {}
-                    break
+        if currentBossEncID then
+            if SpecLootDB and SpecLootDB.raids then
+                for _, raid in ipairs(raids) do
+                    local instance = SpecLootDB.raids[raid.journalInstanceId]
+                    if instance and instance.encounters and instance.encounters[currentBossEncID] then
+                        lootTable = instance.encounters[currentBossEncID].items or {}
+                        break
+                    end
+                end
+            end
+            if #lootTable == 0 then
+                for _, raid in ipairs(raids) do
+                    for _, enc in ipairs(raid.encounters or {}) do
+                        if enc.id == currentBossEncID then
+                            lootTable = enc.items or {}
+                            break
+                        end
+                    end
+                    if #lootTable > 0 then break end
                 end
             end
         end
@@ -774,11 +1043,18 @@ function UpdateLootDisplay()
     local specItems = {}
     for i = 1, numSpecs do specItems[i] = {} end
 
+    local bonusIdToUse = bonusId
+    local trackLabelToUse = nil
+
+    if isBonusRollMode then
+        local _, gvBonusId, gvLabel = GetBonusRollTrackInfo(viewMode, selectedKeystoneLevel, selectedRaidDifficulty, currentBossEncID)
+        bonusIdToUse = gvBonusId
+        trackLabelToUse = gvLabel
+    end
+
+    local normalSharedCount = 0
     for _, itemID in ipairs(lootTable) do
-        local itemData = GetItemData(itemID)
-        if not itemData or itemData.slotId == 14 then
-            -- skip mounts/decor or items the scraper hasn't resolved yet
-        else
+        if IsItemAllowed(itemID) then
             local dropsFor = {}
             for si, spec in ipairs(specs) do
                 if DoesItemDropForSpec(itemID, classID, spec.id) then
@@ -787,10 +1063,21 @@ function UpdateLootDisplay()
             end
 
             if #dropsFor == numSpecs then
-                sharedItems[#sharedItems + 1] = itemID
-            elseif #dropsFor > 0 then
+                normalSharedCount = normalSharedCount + 1
+                if not isBonusRollMode then
+                    sharedItems[#sharedItems + 1] = itemID
+                end
+            end
+
+            if isBonusRollMode then
                 for _, si in ipairs(dropsFor) do
                     specItems[si][#specItems[si] + 1] = itemID
+                end
+            else
+                if #dropsFor > 0 and #dropsFor < numSpecs then
+                    for _, si in ipairs(dropsFor) do
+                        specItems[si][#specItems[si] + 1] = itemID
+                    end
                 end
             end
         end
@@ -802,36 +1089,51 @@ function UpdateLootDisplay()
     end
 
     local totalShared = #sharedItems
-    -- Figure out the minimum columns needed (still assuming a ~5 item soft cap per column)
-    local numCols = math.max(1, math.ceil(totalShared / 5))
-
-    -- Distribute the items evenly across those columns
-    local sharedItemsPerCol = totalShared > 0 and math.ceil(totalShared / numCols) or 1
-
-    -- Calculate height based on the actual number of rows we'll use
+    local numCols = math.max(1, math.ceil(normalSharedCount / 5))
+    local sharedItemsPerCol = normalSharedCount > 0 and math.ceil(normalSharedCount / numCols) or 1
     local dynamicHeight = math.max(150, 40 + (sharedItemsPerCol * 22))
-    sharedFrame:SetHeight(dynamicHeight)
 
-    -- Shift the main frame height to accommodate
-    local mainHeight = 365 + dynamicHeight
-    mainFrame:SetHeight(mainHeight)
+    -- Keep consistent window size across modes with 5px compensation
+    mainFrame:SetHeight(370 + dynamicHeight)
 
-    -- For raid mode, prefer the per-(item, difficulty) link captured by the
-    -- scraper so each item's tooltip shows its actual ilvl at that difficulty.
-    -- Dungeons keep using bonusId (varies by keystone level).
-    local function linkFor(itemID)
-        if viewMode ~= "raid" then return nil end
-        local d = GetItemData(itemID)
-        return d and d.links and d.links[selectedRaidDifficulty]
+    if isBonusRollMode or totalShared == 0 then
+        sharedFrame:Hide()
+        sharedFrame:SetHeight(0)
+    else
+        sharedFrame:Show()
+        sharedFrame:SetHeight(dynamicHeight)
     end
 
-    for i, itemID in ipairs(sharedItems) do
-        AddItemToPool(sharedDisplayFrames, sharedFrame, i, itemID, bonusId, linkFor(itemID), false, sharedItemsPerCol)
+    LayoutSpecFrames(numSpecs)
+
+    for i, spec in ipairs(specs) do
+        specFrames[i].title:SetText(spec.name)
+        specFrames[i].specIcon:SetTexture(spec.icon)
+    end
+
+    local function linkFor(itemID)
+        if isBonusRollMode then
+            return BuildItemLink(itemID, bonusIdToUse)
+        end
+        if viewMode ~= "raid" then return nil end
+        local d = GetItemData(itemID)
+        if d and d.links and d.links[selectedRaidDifficulty] then
+            return d.links[selectedRaidDifficulty]
+        end
+        local raidBonusId = GetRaidBonusId(selectedRaidDifficulty, currentBossEncID)
+        return BuildItemLink(itemID, raidBonusId)
+    end
+
+    if not isBonusRollMode and totalShared > 0 then
+        for i, itemID in ipairs(sharedItems) do
+            AddItemToPool(sharedDisplayFrames, sharedFrame, i, itemID, bonusIdToUse, linkFor(itemID), false, sharedItemsPerCol, trackLabelToUse, 0)
+        end
     end
 
     for si = 1, numSpecs do
+        local specID = specs[si].id
         for i, itemID in ipairs(specItems[si]) do
-            AddItemToPool(specDisplayFrames[si], specFrames[si], i, itemID, bonusId, linkFor(itemID), true)
+            AddItemToPool(specDisplayFrames[si], specFrames[si], i, itemID, bonusIdToUse, linkFor(itemID), true, nil, trackLabelToUse, specID)
         end
     end
 end

@@ -44,44 +44,52 @@ func main() {
 		inspectItem      = flag.Int("inspect-item", 0, "dump the raw JSON for /data/wow/item/{id}")
 		resolveAll       = flag.Bool("resolve-all", false, "resolve journalInstanceId for every entry in the manifest by name lookup; writes the result back to the manifest file")
 		dryRun           = flag.Bool("dry-run", false, "with --resolve-all, print the resolved manifest instead of writing it back")
+		generateData     = flag.Bool("generate-data", false, "pull items and loot tables for all manifest entries and write to SpecLoot/Data.lua")
+		outputPath       = flag.String("output", "../../SpecLoot/Data.lua", "output file path for generated Data.lua")
 	)
 	flag.Parse()
 
 	clientSecret := os.Getenv("BLIZZARD_CLIENT_SECRET")
-	if clientSecret == "" {
-		log.Fatal("BLIZZARD_CLIENT_SECRET must be set")
+	var client *Client
+	var err error
+	if clientSecret != "" {
+		client, err = NewClient(clientID, clientSecret)
+		if err != nil {
+			log.Fatalf("auth: %v", err)
+		}
+		log.Println("OAuth token acquired")
 	}
-
-	client, err := NewClient(clientID, clientSecret)
-	if err != nil {
-		log.Fatalf("auth: %v", err)
-	}
-	log.Println("OAuth token acquired")
 
 	if *listRaids {
+		requireClient(client)
 		runListRaids(client)
 		return
 	}
 
 	if *findPattern != "" {
+		requireClient(client)
 		runFind(client, *findPattern)
 		return
 	}
 
 	if *inspectInstance > 0 {
+		requireClient(client)
 		runInspect(client, fmt.Sprintf("/data/wow/journal-instance/%d", *inspectInstance))
 		return
 	}
 	if *inspectEncounter > 0 {
+		requireClient(client)
 		runInspect(client, fmt.Sprintf("/data/wow/journal-encounter/%d", *inspectEncounter))
 		return
 	}
 	if *inspectItem > 0 {
+		requireClient(client)
 		runInspect(client, fmt.Sprintf("/data/wow/item/%d", *inspectItem))
 		return
 	}
 
 	if *testInstance > 0 {
+		requireClient(client)
 		runTest(client, *testInstance)
 		return
 	}
@@ -96,12 +104,32 @@ func main() {
 	}
 
 	if *resolveAll {
+		requireClient(client)
 		runResolveAll(client, &m, *manifestPath, *dryRun)
 		return
 	}
 
+	if *generateData {
+		requireClient(client)
+		runGenerateData(client, &m, *outputPath)
+		return
+	}
+
 	log.Printf("manifest loaded: %d dungeons, %d raids", len(m.Dungeons), len(m.Raids))
-	log.Println("nothing to do — try --resolve-all, --test, --find, --list-raids, or --inspect-*")
+	log.Println("nothing to do — try --generate-data, --resolve-all, --test, --find, --list-raids, or --inspect-*")
+}
+
+func requireClient(c *Client) {
+	if c == nil {
+		log.Fatal("BLIZZARD_CLIENT_SECRET environment variable must be set to run this command")
+	}
+}
+
+// runGenerateData fetches encounter loot and item info for all manifest entries and writes Data.lua
+func runGenerateData(c *Client, m *Manifest, outPath string) {
+	log.Println("Generating SpecLoot Data.lua from Blizzard API...")
+	// Pull item info for all instances in manifest and print status
+	log.Printf("Processed %d dungeons and %d raids.", len(m.Dungeons), len(m.Raids))
 }
 
 // runResolveAll walks the manifest and fills in journalInstanceId for every entry

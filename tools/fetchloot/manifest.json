@@ -1,93 +1,90 @@
 {
   "dungeons": [
     {
-      "name": "Skyreach",
-      "instanceId": 1209,
-      "journalInstanceId": 476,
-      "challengeModeId": 161,
-      "abbrev": "SKY",
-      "teleportSpellId": 159898,
-      "bgTexture": 1041999
+      "name": "Kings' Rest",
+      "instanceId": 1762,
+      "journalInstanceId": 1041,
+      "challengeModeId": 249,
+      "abbrev": "KR",
+      "teleportSpellId": 1286831,
+      "bgTexture": 2178269
     },
     {
-      "name": "Seat of the Triumvirate",
-      "instanceId": 1753,
-      "journalInstanceId": 945,
-      "challengeModeId": 239,
-      "abbrev": "SEAT",
-      "teleportSpellId": 1254551,
-      "bgTexture": 1718213
+      "name": "Temple of Sethraliss",
+      "instanceId": 1877,
+      "journalInstanceId": 1030,
+      "challengeModeId": 250,
+      "abbrev": "TOS",
+      "teleportSpellId": 1286828,
+      "bgTexture": 2178273
     },
     {
-      "name": "Algeth'ar Academy",
-      "instanceId": 2526,
-      "journalInstanceId": 1201,
-      "challengeModeId": 402,
-      "abbrev": "AA",
-      "teleportSpellId": 393273,
-      "bgTexture": 4742929
+      "name": "Ruby Life Pools",
+      "instanceId": 2521,
+      "journalInstanceId": 1202,
+      "challengeModeId": 399,
+      "abbrev": "RLP",
+      "teleportSpellId": 393256,
+      "bgTexture": 4742927
     },
     {
-      "name": "Pit of Saron",
-      "instanceId": 658,
-      "journalInstanceId": 278,
-      "challengeModeId": 556,
-      "abbrev": "POS",
-      "teleportSpellId": 1254555,
-      "bgTexture": 608210
-    },
-    {
-      "name": "Windrunner Spire",
-      "instanceId": 2805,
-      "journalInstanceId": 1299,
-      "challengeModeId": 557,
-      "abbrev": "WRS",
-      "teleportSpellId": 1254400,
-      "bgTexture": 7464937
-    },
-    {
-      "name": "Magisters' Terrace",
-      "instanceId": 2811,
-      "journalInstanceId": 1300,
-      "challengeModeId": 558,
-      "abbrev": "MT",
-      "teleportSpellId": 1254572,
-      "bgTexture": 7467174
-    },
-    {
-      "name": "Nexus-Point Xenas",
-      "instanceId": 2915,
-      "journalInstanceId": 1316,
-      "challengeModeId": 559,
-      "abbrev": "NPX",
-      "teleportSpellId": 1254563,
-      "bgTexture": 7570501
-    },
-    {
-      "name": "Maisara Caverns",
-      "instanceId": 2874,
+      "name": "Blinding Vale",
+      "instanceId": 2859,
       "journalInstanceId": 1315,
-      "challengeModeId": 560,
-      "abbrev": "MC",
-      "teleportSpellId": 1254559,
-      "bgTexture": 7478529
+      "challengeModeId": 584,
+      "abbrev": "BV",
+      "teleportSpellId": 1286801,
+      "bgTexture": 7478528
+    },
+    {
+      "name": "Voidscar Arena",
+      "instanceId": 2923,
+      "journalInstanceId": 1316,
+      "challengeModeId": 585,
+      "abbrev": "VA",
+      "teleportSpellId": 1286804,
+      "bgTexture": 7479110
+    },
+    {
+      "name": "Nalorakk's Den",
+      "instanceId": 2825,
+      "journalInstanceId": 1313,
+      "challengeModeId": 586,
+      "abbrev": "ND",
+      "teleportSpellId": 1286807,
+      "bgTexture": 7478530
+    },
+    {
+      "name": "Murder Row",
+      "instanceId": 2813,
+      "journalInstanceId": 1300,
+      "challengeModeId": 587,
+      "abbrev": "MR",
+      "teleportSpellId": 1286809,
+      "bgTexture": 7467175
+    },
+    {
+      "name": "Altar of Fangs",
+      "instanceId": 2993,
+      "journalInstanceId": 1319,
+      "challengeModeId": 588,
+      "abbrev": "AF",
+      "teleportSpellId": 1286812,
+      "bgTexture": 7956179
     }
   ],
   "raids": [
     {
-      "name": "The Voidspire",
-      "journalInstanceId": 1307,
-      "abbrev": "VS"
+      "name": "Tidebound Grotto",
+      "instanceId": 2987,
+      "journalInstanceId": 1317,
+      "abbrev": "TG"
     },
     {
-      "name": "The Dreamrift",
-      "journalInstanceId": 1314,
-      "abbrev": "DR"
-    },
-    {
-      "name": "March on Quel'Danas",
-      "journalInstanceId": 1308,
-      "abbrev": "MQD"
+      "name": "The Toxic Abyss",
+      "instanceId": 3004,
+      "journalInstanceId": 1320,
+      "abbrev": "TA"
     }
   ]
 }

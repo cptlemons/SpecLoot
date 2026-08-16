@@ -36,8 +36,7 @@ func newTestClient(t *testing.T) *Client {
 	t.Helper()
 	secret := os.Getenv("BLIZZARD_CLIENT_SECRET")
 	if secret == "" {
-		t.Fatal("BLIZZARD_CLIENT_SECRET environment variable is not set. " +
-			"Export it before running tests (see tools/fetchloot/README.md).")
+		t.Skip("BLIZZARD_CLIENT_SECRET environment variable is not set; skipping online tests")
 	}
 	c, err := NewClient(clientID, secret)
 	if err != nil {
