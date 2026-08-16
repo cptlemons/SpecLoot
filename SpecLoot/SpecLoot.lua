@@ -232,6 +232,79 @@ local function GetTrackLabel(track, rank)
     return track:sub(1, 1):upper() .. track:sub(2) .. " " .. rank .. "/" .. maxRank
 end
 
+local function GetBonusRollTrackInfo(vMode, keystoneLevel, raidDifficulty, bossEncID)
+    if vMode == "dungeon" then
+        local rule
+        for _, r in ipairs(addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules or {}) do
+            for _, k in ipairs(r.keystones) do
+                if k == keystoneLevel then rule = r; break end
+            end
+            if rule then break end
+        end
+        if not rule then
+            rule = addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules and addonTable.KeystoneMapping.rules[#addonTable.KeystoneMapping.rules]
+        end
+        local gv = rule and rule.greatVault or { track = "myth", rank = 1 }
+        local trackName = gv.track
+        local rank = gv.rank
+        local trackData = addonTable.UpgradeTracks and addonTable.UpgradeTracks[trackName]
+        local maxRank = trackData and #trackData or 6
+        local ilvl = trackData and trackData[rank] and trackData[rank].ilvl or 318
+        local bonusId = trackData and trackData[rank] and trackData[rank].bonusId or 12849
+
+        local shortTrack = trackName:sub(1, 1):upper() .. trackName:sub(2)
+        local trackLabel = rank .. "/" .. maxRank .. " " .. shortTrack
+        return ilvl, bonusId, trackLabel
+    else
+        local bossIndex = 1
+        if bossEncID and addonTable.RaidDatabase then
+            for _, raid in ipairs(addonTable.RaidDatabase) do
+                for idx, enc in ipairs(raid.encounters or {}) do
+                    if enc.id == bossEncID then
+                        bossIndex = enc.index or idx
+                        break
+                    end
+                end
+            end
+        end
+        local bossRank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
+
+        local ilvl, bonusId, trackLabel
+        if raidDifficulty == 17 then
+            -- LFR -> Normal / Champ track
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["normal"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 292
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12833
+            trackLabel = bossRank .. "/6 Champ"
+        elseif raidDifficulty == 14 then
+            -- Normal -> Heroic / Hero track
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["heroic"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 305
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12841
+            trackLabel = bossRank .. "/6 Hero"
+        elseif raidDifficulty == 15 then
+            -- Heroic -> Mythic / Myth track (1/6 Myth .. 4/6 Myth)
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["mythic"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 318
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12849
+            trackLabel = bossRank .. "/6 Myth"
+        else
+            -- Mythic (16) -> 6/6 Myth or 9/6 Myth
+            if bossRank >= 3 then
+                ilvl = 334
+                bonusId = 12854
+                trackLabel = "9/6 Myth"
+            else
+                ilvl = 334
+                bonusId = 12854
+                trackLabel = "6/6 Myth"
+            end
+        end
+
+        return ilvl, bonusId, trackLabel
+    end
+end
+
 local function GetClassSpecs(classID)
     local classInfo = addonTable.ClassInfo[classID]
     return classInfo and classInfo.specs or {}
@@ -299,6 +372,24 @@ local function BuildItemLink(itemID, bonusId)
         return "item:" .. itemID .. "::::::::80::::2:1674:" .. bonusId
     end
     return "item:" .. itemID
+end
+
+local function BuildItemHyperlink(itemID, bonusId)
+    local rawString = BuildItemLink(itemID, bonusId)
+    local itemName = C_Item.GetItemNameByID(itemID)
+    if not itemName or itemName == "" then
+        itemName = select(1, C_Item.GetItemInfo(itemID))
+    end
+    if not itemName or itemName == "" then
+        itemName = select(1, C_Item.GetItemInfoInstant(itemID))
+    end
+    if not itemName or itemName == "" then
+        itemName = "Item " .. itemID
+    end
+
+    local _, _, itemQuality = C_Item.GetItemInfoInstant(itemID)
+    local hexColor = (itemQuality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[itemQuality] and ITEM_QUALITY_COLORS[itemQuality].hex) or "|cffa335ee"
+    return hexColor .. "|H" .. rawString .. "|h[" .. itemName .. "]|h|r"
 end
 
 -----------------------------------------
@@ -450,6 +541,7 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
 
     local sourceName = nil
     local difficultyText = nil
+    local scaledBonusId = nil
     local shouldTrack = false
 
     local isInsideRaid = (instanceType == "raid")
@@ -458,6 +550,7 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
     if isInsideRaid or (raidMatch and not isInsideParty) then
         local bossName = lastKilledBossName or (raidMatch and raidMatch.enc and raidMatch.enc.name)
         local raidName = cachedRaidName or (raidMatch and raidMatch.raid and raidMatch.raid.name) or (name ~= "" and name) or "Raid"
+        local encID = lastKilledBossEncID or (raidMatch and raidMatch.enc and raidMatch.enc.id)
 
         if bossName and bossName ~= "" then
             sourceName = string.format("%s in %s", bossName, raidName)
@@ -468,6 +561,9 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
         local diffID = (difficultyID and difficultyID > 0 and isInsideRaid) and difficultyID or cachedRaidDifficultyID or selectedRaidDifficulty or 15
         local diffInfo = GetRaidDifficultyInfo(diffID)
         difficultyText = diffInfo and diffInfo.name or difficultyName or "Heroic"
+
+        local _, bId = GetBonusRollTrackInfo("raid", 10, diffID, encID)
+        scaledBonusId = bId
         shouldTrack = true
 
     elseif isInsideParty or dungeonMatch then
@@ -479,6 +575,9 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
         local dungeonName = (dungeonMatch and dungeonMatch.name) or (name ~= "" and name) or "Mythic+ Dungeon"
         sourceName = dungeonName
         difficultyText = (currentKeyLevel and currentKeyLevel >= 10) and string.format("Mythic+ (+%d)", currentKeyLevel) or "Mythic+ (10+)"
+
+        local _, bId = GetBonusRollTrackInfo("dungeon", currentKeyLevel or 10)
+        scaledBonusId = bId
         shouldTrack = true
     end
 
@@ -487,7 +586,7 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
         local key = (effectiveSpecID or 0) .. ":" .. itemID
         local alreadyReceived = SpecLootCharDB.receivedItems and SpecLootCharDB.receivedItems[key]
 
-        local displayLink = select(2, C_Item.GetItemInfo(itemID)) or itemLink
+        local displayLink = BuildItemHyperlink(itemID, scaledBonusId)
 
         if alreadyReceived then
             print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s), but it was already marked as received.",
@@ -877,79 +976,6 @@ end
 -----------------------------------------
 
 local isBonusRollMode = false
-
-local function GetBonusRollTrackInfo(vMode, keystoneLevel, raidDifficulty, bossEncID)
-    if vMode == "dungeon" then
-        local rule
-        for _, r in ipairs(addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules or {}) do
-            for _, k in ipairs(r.keystones) do
-                if k == keystoneLevel then rule = r; break end
-            end
-            if rule then break end
-        end
-        if not rule then
-            rule = addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules and addonTable.KeystoneMapping.rules[#addonTable.KeystoneMapping.rules]
-        end
-        local gv = rule and rule.greatVault or { track = "myth", rank = 1 }
-        local trackName = gv.track
-        local rank = gv.rank
-        local trackData = addonTable.UpgradeTracks and addonTable.UpgradeTracks[trackName]
-        local maxRank = trackData and #trackData or 6
-        local ilvl = trackData and trackData[rank] and trackData[rank].ilvl or 318
-        local bonusId = trackData and trackData[rank] and trackData[rank].bonusId or 12849
-
-        local shortTrack = trackName:sub(1, 1):upper() .. trackName:sub(2)
-        local trackLabel = rank .. "/" .. maxRank .. " " .. shortTrack
-        return ilvl, bonusId, trackLabel
-    else
-        local bossIndex = 1
-        if bossEncID and addonTable.RaidDatabase then
-            for _, raid in ipairs(addonTable.RaidDatabase) do
-                for idx, enc in ipairs(raid.encounters or {}) do
-                    if enc.id == bossEncID then
-                        bossIndex = enc.index or idx
-                        break
-                    end
-                end
-            end
-        end
-        local bossRank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
-
-        local ilvl, bonusId, trackLabel
-        if raidDifficulty == 17 then
-            -- LFR -> Normal / Champ track
-            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["normal"]
-            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 292
-            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12833
-            trackLabel = bossRank .. "/6 Champ"
-        elseif raidDifficulty == 14 then
-            -- Normal -> Heroic / Hero track
-            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["heroic"]
-            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 305
-            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12841
-            trackLabel = bossRank .. "/6 Hero"
-        elseif raidDifficulty == 15 then
-            -- Heroic -> Mythic / Myth track (1/6 Myth .. 4/6 Myth)
-            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["mythic"]
-            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 318
-            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12849
-            trackLabel = bossRank .. "/6 Myth"
-        else
-            -- Mythic (16) -> 6/6 Myth or 9/6 Myth
-            if bossRank >= 3 then
-                ilvl = 334
-                bonusId = 12854
-                trackLabel = "9/6 Myth"
-            else
-                ilvl = 334
-                bonusId = 12854
-                trackLabel = "6/6 Myth"
-            end
-        end
-
-        return ilvl, bonusId, trackLabel
-    end
-end
 
 local mythicTab = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
 mythicTab:SetSize(80, 22)
