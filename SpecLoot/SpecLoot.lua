@@ -462,15 +462,23 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
     if shouldTrack and sourceName and difficultyText then
         InitCharDB()
         local key = (effectiveSpecID or 0) .. ":" .. itemID
-        SpecLootCharDB.receivedItems[key] = true
-
-        if mainFrame:IsShown() then
-            UpdateLootDisplay()
-        end
+        local alreadyReceived = SpecLootCharDB.receivedItems and SpecLootCharDB.receivedItems[key]
 
         local displayLink = select(2, C_Item.GetItemInfo(itemID)) or itemLink
-        print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s for %s. Marked as received.",
-            displayLink, sourceName, difficultyText, specName))
+
+        if alreadyReceived then
+            print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s), but it was already marked as received.",
+                displayLink, sourceName, difficultyText, specName))
+        else
+            SpecLootCharDB.receivedItems[key] = true
+
+            if mainFrame:IsShown() then
+                UpdateLootDisplay()
+            end
+
+            print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s). Marked as received.",
+                displayLink, sourceName, difficultyText, specName))
+        end
     end
 end
 
