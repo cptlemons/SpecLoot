@@ -341,6 +341,11 @@ local function GetEffectiveLootSpecID(eventSpecID)
 end
 
 HandleTestKey = function(keyLevel)
+    lastKilledBossEncID = nil
+    lastKilledBossName = nil
+    cachedRaidMapID = nil
+    cachedRaidDifficultyID = nil
+    cachedRaidName = nil
     cachedKeyLevel = keyLevel
     InitCharDB()
     SpecLootCharDB.cachedKeyLevel = keyLevel
@@ -348,6 +353,10 @@ HandleTestKey = function(keyLevel)
 end
 
 HandleTestKill = function(bossEncID, diffID)
+    cachedKeyLevel = nil
+    if SpecLootCharDB then
+        SpecLootCharDB.cachedKeyLevel = nil
+    end
     lastKilledBossEncID = bossEncID
     cachedRaidDifficultyID = diffID or 15
     local bossName = "Unknown Boss"
@@ -400,66 +409,55 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
         currentKeyLevel = SpecLootCharDB.cachedKeyLevel
     end
 
-    local isMPlus = (instanceType == "party" and (difficultyID == 23 or difficultyID == 8)) or (currentKeyLevel and currentKeyLevel > 0)
-    local isRaid = (instanceType == "raid") or (cachedRaidMapID ~= nil)
+    -- Check if item belongs to a raid encounter
+    local raidMatch = nil
+    if raids then
+        for _, r in ipairs(raids) do
+            for _, enc in ipairs(r.encounters or {}) do
+                if lastKilledBossEncID and enc.id == lastKilledBossEncID then
+                    raidMatch = { raid = r, enc = enc }
+                    break
+                end
+                for _, id in ipairs(enc.items or {}) do
+                    if id == itemID then
+                        raidMatch = { raid = r, enc = enc }
+                        break
+                    end
+                end
+                if raidMatch then break end
+            end
+            if raidMatch then break end
+        end
+    end
+
+    -- Check if item belongs to a dungeon
+    local dungeonMatch = nil
+    if dungeons then
+        for _, d in ipairs(dungeons) do
+            if d.instanceId == instanceID or d.name == name then
+                dungeonMatch = d
+                break
+            end
+            for _, id in ipairs(d.lootTable or {}) do
+                if id == itemID then
+                    dungeonMatch = d
+                    break
+                end
+            end
+            if dungeonMatch then break end
+        end
+    end
 
     local sourceName = nil
     local difficultyText = nil
     local shouldTrack = false
 
-    if isMPlus then
-        -- M+ Threshold rule: do not auto track if keystone is < 10
-        if currentKeyLevel and currentKeyLevel < 10 then
-            return -- Ignore M+ bonus rolls below +10
-        end
+    local isInsideRaid = (instanceType == "raid")
+    local isInsideParty = (instanceType == "party")
 
-        local dungeonName = nil
-        if dungeons then
-            for _, d in ipairs(dungeons) do
-                if d.instanceId == instanceID or d.name == name then
-                    dungeonName = d.name
-                    break
-                end
-            end
-            if not dungeonName then
-                for _, d in ipairs(dungeons) do
-                    for _, id in ipairs(d.lootTable or {}) do
-                        if id == itemID then
-                            dungeonName = d.name
-                            break
-                        end
-                    end
-                    if dungeonName then break end
-                end
-            end
-        end
-
-        sourceName = dungeonName or (name ~= "" and name) or "Mythic+ Dungeon"
-        difficultyText = (currentKeyLevel and currentKeyLevel >= 10) and string.format("Mythic+ (+%d)", currentKeyLevel) or "Mythic+ (10+)"
-        shouldTrack = true
-
-    elseif isRaid then
-        local raidName = cachedRaidName or (instanceType == "raid" and name) or "Raid"
-        local bossName = lastKilledBossName
-
-        if raids then
-            for _, r in ipairs(raids) do
-                for _, enc in ipairs(r.encounters or {}) do
-                    if lastKilledBossEncID and enc.id == lastKilledBossEncID then
-                        bossName = enc.name
-                        raidName = r.name
-                        break
-                    end
-                    for _, id in ipairs(enc.items or {}) do
-                        if id == itemID then
-                            bossName = enc.name
-                            raidName = r.name
-                            break
-                        end
-                    end
-                end
-            end
-        end
+    if isInsideRaid or (raidMatch and not isInsideParty) then
+        local bossName = lastKilledBossName or (raidMatch and raidMatch.enc and raidMatch.enc.name)
+        local raidName = cachedRaidName or (raidMatch and raidMatch.raid and raidMatch.raid.name) or (name ~= "" and name) or "Raid"
 
         if bossName and bossName ~= "" then
             sourceName = string.format("%s in %s", bossName, raidName)
@@ -467,46 +465,21 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
             sourceName = raidName
         end
 
-        local diffID = (difficultyID and difficultyID > 0) and difficultyID or cachedRaidDifficultyID or 15
+        local diffID = (difficultyID and difficultyID > 0 and isInsideRaid) and difficultyID or cachedRaidDifficultyID or selectedRaidDifficulty or 15
         local diffInfo = GetRaidDifficultyInfo(diffID)
-        difficultyText = diffInfo and diffInfo.name or difficultyName or "Raid"
+        difficultyText = diffInfo and diffInfo.name or difficultyName or "Heroic"
         shouldTrack = true
 
-    else
-        -- Outside of instance (e.g. rolled from vault or world boss), scan Season 2 data
-        local found = false
-        if raids then
-            for _, r in ipairs(raids) do
-                for _, enc in ipairs(r.encounters or {}) do
-                    for _, id in ipairs(enc.items or {}) do
-                        if id == itemID then
-                            sourceName = string.format("%s in %s", enc.name, r.name)
-                            difficultyText = "Raid"
-                            shouldTrack = true
-                            found = true
-                            break
-                        end
-                    end
-                    if found then break end
-                end
-                if found then break end
-            end
+    elseif isInsideParty or dungeonMatch then
+        -- M+ Threshold rule: do not auto track if keystone is < 10
+        if currentKeyLevel and currentKeyLevel < 10 then
+            return -- Ignore M+ bonus rolls below +10
         end
 
-        if not found and dungeons then
-            for _, d in ipairs(dungeons) do
-                for _, id in ipairs(d.lootTable or {}) do
-                    if id == itemID then
-                        sourceName = d.name
-                        difficultyText = "Mythic+ (10+)"
-                        shouldTrack = true
-                        found = true
-                        break
-                    end
-                end
-                if found then break end
-            end
-        end
+        local dungeonName = (dungeonMatch and dungeonMatch.name) or (name ~= "" and name) or "Mythic+ Dungeon"
+        sourceName = dungeonName
+        difficultyText = (currentKeyLevel and currentKeyLevel >= 10) and string.format("Mythic+ (+%d)", currentKeyLevel) or "Mythic+ (10+)"
+        shouldTrack = true
     end
 
     if shouldTrack and sourceName and difficultyText then
