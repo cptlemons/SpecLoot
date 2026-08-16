@@ -103,11 +103,11 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "debug" then
         addonTable.Scraper:Scrape(true)
         addonTable.Scraper:EnsureClassClassified(selectedClassID)
-    elseif msg == "list" or msg == "rolls" or msg == "listrolls" or msg == "history" then
+    elseif msg:match("^bonus%s+list") or msg:match("^bonus%s+rolls") or msg == "bonus list" or msg == "bonus rolls" or msg == "list" or msg == "rolls" or msg == "listrolls" or msg == "history" then
         if ListReceivedBonusRolls then
             ListReceivedBonusRolls()
         end
-    elseif msg == "clear" or msg == "reset" or msg == "clearrolls" or msg == "resetrolls" then
+    elseif msg:match("^bonus%s+clear") or msg:match("^bonus%s+reset") or msg == "clear" or msg == "reset" or msg == "clearrolls" or msg == "resetrolls" then
         InitCharDB()
         SpecLootCharDB.receivedItems = {}
         if mainFrame:IsShown() then
@@ -156,8 +156,8 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "help" or msg == "?" then
         print("|cffa335eeSpecLoot|r commands:")
         print("  /sl                  toggle the main window")
-        print("  /sl list             list all marked bonus rolls for this character")
-        print("  /sl clear            reset marked bonus rolls for this character")
+        print("  /sl bonus list       list all marked bonus rolls for this character")
+        print("  /sl bonus clear      reset marked bonus rolls for this character")
         print("  /sl testroll <id>    simulate receiving a bonus roll item")
         print("  /sl testkill <boss>  simulate a raid boss kill (e.g. /sl testkill 2849)")
         print("  /sl testkey <lvl>    simulate an active keystone level (e.g. /sl testkey 10)")

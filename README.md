@@ -27,8 +27,8 @@ Useful for picking which loot spec to set before pushing a key or pulling a boss
 | Command | Action |
 | :--- | :--- |
 | `/sl` or `/specloot` | Toggle the main interface |
-| `/sl list` or `/sl rolls` | List all marked bonus roll items for the current character with item link, source, difficulty, and loot spec |
-| `/sl clear` or `/sl reset` | Reset all marked bonus roll items for the current character |
+| `/sl bonus list` or `/sl bonus rolls` | List all marked bonus roll items for the current character with item link, source, difficulty, and loot spec |
+| `/sl bonus clear` or `/sl clear` | Reset all marked bonus roll items for the current character |
 | `/sl testroll <id>` | Simulate receiving a bonus roll item |
 | `/sl testkill <bossID>` | Simulate a raid boss kill |
 | `/sl testkey <level>` | Simulate an active keystone level |
