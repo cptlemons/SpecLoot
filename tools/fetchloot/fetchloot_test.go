@@ -38,7 +38,11 @@ func newTestClient(t *testing.T) *Client {
 	if secret == "" {
 		t.Skip("BLIZZARD_CLIENT_SECRET environment variable is not set; skipping online tests")
 	}
-	c, err := NewClient(clientID, secret)
+	id := os.Getenv("BLIZZARD_CLIENT_ID")
+	if id == "" {
+		id = defaultClientID
+	}
+	c, err := NewClient(id, secret)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
