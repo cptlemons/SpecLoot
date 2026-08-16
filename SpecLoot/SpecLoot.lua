@@ -20,9 +20,34 @@ mainFrame:RegisterForDrag("LeftButton")
 mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
 mainFrame:SetScript("OnDragStop", mainFrame.StopMovingOrSizing)
 mainFrame.TitleText:SetText("SpecLoot")
+
+local titleIcon = mainFrame:CreateTexture(nil, "ARTWORK")
+titleIcon:SetSize(16, 16)
+titleIcon:SetPoint("RIGHT", mainFrame.TitleText, "LEFT", -4, 0)
+titleIcon:SetTexture("Interface\\AddOns\\SpecLoot\\icon.png")
+
 mainFrame:Hide()
 
 tinsert(UISpecialFrames, "SpecLootMainFrame")
+
+function SpecLoot_OnAddonCompartmentClick(addonName, button)
+    if mainFrame:IsShown() then
+        mainFrame:Hide()
+    else
+        mainFrame:Show()
+    end
+end
+
+function SpecLoot_OnAddonCompartmentEnter(addonName, button)
+    GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+    GameTooltip:SetText("|cffa335eeSpecLoot|r")
+    GameTooltip:AddLine("Click to toggle the SpecLoot window.", 1, 1, 1)
+    GameTooltip:Show()
+end
+
+function SpecLoot_OnAddonCompartmentLeave(addonName, button)
+    GameTooltip:Hide()
+end
 
 local function InitCharDB()
     SpecLootCharDB = SpecLootCharDB or {}
