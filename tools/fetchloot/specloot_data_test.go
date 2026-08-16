@@ -101,7 +101,7 @@ func TestItemFilteringAndBlindingVale(t *testing.T) {
 		if id == 270909 {
 			return true
 		}
-		if id == 279118 || id == 275658 || id == 256625 {
+		if id == 258045 || id == 279118 || id == 275658 || id == 256625 {
 			return false
 		}
 		slotID, _ := getItemDHSpecsAndSlot(id)

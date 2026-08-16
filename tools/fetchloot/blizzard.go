@@ -16,8 +16,8 @@ const (
 	namespace = "static-us"
 	locale    = "en_US"
 
-	// Client ID for the SpecLoot data-fetcher Battle.net app. Not a secret.
-	clientID = "006a330ae62f4a2bbae7b794443e86a3"
+	// Default Client ID for the SpecLoot data-fetcher Battle.net app.
+	defaultClientID = "006a330ae62f4a2bbae7b794443e86a3"
 )
 
 type Client struct {

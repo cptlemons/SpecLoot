@@ -36,6 +36,8 @@ type RaidEntry struct {
 func main() {
 	var (
 		manifestPath     = flag.String("manifest", "manifest.json", "path to manifest file")
+		clientIDFlag     = flag.String("client-id", "", "Blizzard API client ID (defaults to BLIZZARD_CLIENT_ID env var or built-in default)")
+		clientSecretFlag = flag.String("client-secret", "", "Blizzard API client secret (defaults to BLIZZARD_CLIENT_SECRET env var)")
 		testInstance     = flag.Int("test", 0, "fetch only this instance ID and print a diagnostic report")
 		listRaids        = flag.Bool("list-raids", false, "list all raid-category instances and exit (useful for finding instance IDs by name)")
 		findPattern      = flag.String("find", "", "list every journal-instance whose name contains this substring (case-insensitive)")
@@ -49,7 +51,18 @@ func main() {
 	)
 	flag.Parse()
 
-	clientSecret := os.Getenv("BLIZZARD_CLIENT_SECRET")
+	clientID := *clientIDFlag
+	if clientID == "" {
+		clientID = os.Getenv("BLIZZARD_CLIENT_ID")
+	}
+	if clientID == "" {
+		clientID = defaultClientID
+	}
+
+	clientSecret := *clientSecretFlag
+	if clientSecret == "" {
+		clientSecret = os.Getenv("BLIZZARD_CLIENT_SECRET")
+	}
 	var client *Client
 	var err error
 	if clientSecret != "" {
@@ -121,7 +134,7 @@ func main() {
 
 func requireClient(c *Client) {
 	if c == nil {
-		log.Fatal("BLIZZARD_CLIENT_SECRET environment variable must be set to run this command")
+		log.Fatal("Blizzard client secret must be provided via --client-secret flag or BLIZZARD_CLIENT_SECRET environment variable")
 	}
 }
 
