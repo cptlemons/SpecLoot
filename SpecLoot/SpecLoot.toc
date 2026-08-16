@@ -3,6 +3,10 @@
 ## Notes: Compare loot drops across the specs of any class for Mythic+ and raid.
 ## Author: cptlemons
 ## Version: @project-version@
+## IconTexture: Interface\AddOns\SpecLoot\icon.png
+## AddonCompartmentFunc: SpecLoot_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: SpecLoot_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: SpecLoot_OnAddonCompartmentLeave
 ## SavedVariables: SpecLootDB
 ## SavedVariablesPerCharacter: SpecLootCharDB
 ## X-Curse-Project-ID: 1529024
