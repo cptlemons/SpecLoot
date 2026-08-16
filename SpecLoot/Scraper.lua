@@ -4,7 +4,7 @@ local Scraper = {}
 addonTable.Scraper = Scraper
 
 -- Bump this to force a full re-scrape on next login (e.g. after content patches).
-local SCRAPE_VERSION = 13
+local SCRAPE_VERSION = 14
 
 -- Blizzard_EncounterJournal is load-on-demand. Until it's been initialized, the
 -- EJ_* APIs only return items the player has personally encountered, not the
@@ -125,7 +125,10 @@ local INVTYPE_TO_SLOTID = {
 }
 
 local function GetSlotId(itemID, itemLinks)
-    local _, _, _, equipLoc = C_Item.GetItemInfoInstant(itemID)
+    local _, _, _, equipLoc, _, classID, subclassID = C_Item.GetItemInfoInstant(itemID)
+    if equipLoc == "INVTYPE_COSMETIC" or equipLoc == "INVTYPE_NON_EQUIP" or (classID == 4 and subclassID == 5) then
+        return 14 -- Filtered out cosmetic / bonus loot
+    end
     if equipLoc and INVTYPE_TO_SLOTID[equipLoc] then
         return INVTYPE_TO_SLOTID[equipLoc]
     end
@@ -586,42 +589,95 @@ local function flattenLootTable(instance)
 end
 
 -- Returns a flat array of itemIDs for the dungeon (M+ rotation) at this journal-instance ID,
--- deduped across encounters. Empty table if the cache hasn't been built yet.
+-- deduped across encounters. Falls back to static DungeonDatabase in Data.lua.
 function Scraper:GetDungeonLootTable(journalInstanceID)
-    if not SpecLootDB or not SpecLootDB.dungeons then return {} end
-    return flattenLootTable(SpecLootDB.dungeons[journalInstanceID])
-end
-
--- Same for raids — the table unions items across all four raid difficulties.
-function Scraper:GetRaidLootTable(journalInstanceID)
-    if not SpecLootDB or not SpecLootDB.raids then return {} end
-    return flattenLootTable(SpecLootDB.raids[journalInstanceID])
-end
-
--- Returns an ordered list of encounters for a raid, in journal display order.
--- Each entry: { id, name, creatureDisplayID, items = {...} }.
-function Scraper:GetRaidEncounters(journalInstanceID)
-    if not SpecLootDB or not SpecLootDB.raids then return {} end
-    local instance = SpecLootDB.raids[journalInstanceID]
-    if not instance or not instance.encounters then return {} end
-    local list = {}
-    for encID, enc in pairs(instance.encounters) do
-        list[#list + 1] = {
-            id = encID,
-            name = enc.name,
-            creatureDisplayID = enc.creatureDisplayID,
-            items = enc.items,
-            index = enc.index,
-        }
+    if SpecLootDB and SpecLootDB.dungeons and SpecLootDB.dungeons[journalInstanceID] then
+        local scraped = flattenLootTable(SpecLootDB.dungeons[journalInstanceID])
+        if #scraped > 0 then return scraped end
     end
-    table.sort(list, function(a, b) return (a.index or 9999) < (b.index or 9999) end)
-    return list
+    for _, dungeon in ipairs(addonTable.DungeonDatabase or {}) do
+        if dungeon.journalInstanceId == journalInstanceID or dungeon.challengeModeId == journalInstanceID then
+            return dungeon.lootTable or {}
+        end
+    end
+    return {}
+end
+
+-- Same for raids — the table unions items across all encounters.
+function Scraper:GetRaidLootTable(journalInstanceID)
+    if SpecLootDB and SpecLootDB.raids and SpecLootDB.raids[journalInstanceID] then
+        local scraped = flattenLootTable(SpecLootDB.raids[journalInstanceID])
+        if #scraped > 0 then return scraped end
+    end
+    for _, raid in ipairs(addonTable.RaidDatabase or {}) do
+        if raid.journalInstanceId == journalInstanceID then
+            local list = {}
+            for _, enc in ipairs(raid.encounters or {}) do
+                for _, itemID in ipairs(enc.items or {}) do
+                    table.insert(list, itemID)
+                end
+            end
+            return list
+        end
+    end
+    return {}
+end
+
+-- Returns an ordered list of encounters for a raid, in display order.
+function Scraper:GetRaidEncounters(journalInstanceID)
+    if SpecLootDB and SpecLootDB.raids and SpecLootDB.raids[journalInstanceID] then
+        local instance = SpecLootDB.raids[journalInstanceID]
+        if instance and instance.encounters and next(instance.encounters) then
+            local list = {}
+            for encID, enc in pairs(instance.encounters) do
+                list[#list + 1] = {
+                    id = encID,
+                    name = enc.name,
+                    creatureDisplayID = enc.creatureDisplayID,
+                    items = enc.items,
+                    index = enc.index,
+                }
+            end
+            table.sort(list, function(a, b) return (a.index or 9999) < (b.index or 9999) end)
+            return list
+        end
+    end
+    for _, raid in ipairs(addonTable.RaidDatabase or {}) do
+        if raid.journalInstanceId == journalInstanceID then
+            local list = {}
+            for _, enc in ipairs(raid.encounters or {}) do
+                list[#list + 1] = {
+                    id = enc.id,
+                    name = enc.name,
+                    creatureDisplayID = enc.creatureDisplayID,
+                    items = enc.items,
+                    index = enc.index,
+                }
+            end
+            return list
+        end
+    end
+    return {}
 end
 
 -- Item metadata: { slotId, icon, classes = { [classID] = { specID, ... } } } or nil.
 function Scraper:GetItemData(itemID)
-    if not SpecLootDB or not SpecLootDB.itemCache then return nil end
-    return SpecLootDB.itemCache[itemID]
+    if SpecLootDB and SpecLootDB.itemCache and SpecLootDB.itemCache[itemID] then
+        local d = SpecLootDB.itemCache[itemID]
+        if d and d.slotId ~= 14 then
+            return d
+        end
+    end
+    if addonTable.ItemDatabase and addonTable.ItemDatabase[itemID] then
+        local staticItem = addonTable.ItemDatabase[itemID]
+        local icon = C_Item.GetItemIconByID(itemID) or 134400
+        return {
+            slotId = staticItem.slotId,
+            icon = icon,
+            classes = staticItem.classes,
+        }
+    end
+    return SpecLootDB and SpecLootDB.itemCache and SpecLootDB.itemCache[itemID]
 end
 
 function Scraper:GetSummary()
