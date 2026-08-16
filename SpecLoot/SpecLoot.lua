@@ -582,24 +582,33 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
     end
 
     if shouldTrack and sourceName and difficultyText then
-        InitCharDB()
-        local key = (effectiveSpecID or 0) .. ":" .. itemID
-        local alreadyReceived = SpecLootCharDB.receivedItems and SpecLootCharDB.receivedItems[key]
+        local function executeTrack()
+            InitCharDB()
+            local key = (effectiveSpecID or 0) .. ":" .. itemID
+            local alreadyReceived = SpecLootCharDB.receivedItems and SpecLootCharDB.receivedItems[key]
 
-        local displayLink = BuildItemHyperlink(itemID, scaledBonusId)
+            local displayLink = BuildItemHyperlink(itemID, scaledBonusId)
 
-        if alreadyReceived then
-            print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s), but it was already marked as received.",
-                displayLink, sourceName, difficultyText, specName))
-        else
-            SpecLootCharDB.receivedItems[key] = true
+            if alreadyReceived then
+                print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s), but it was already marked as received.",
+                    displayLink, sourceName, difficultyText, specName))
+            else
+                SpecLootCharDB.receivedItems[key] = true
 
-            if mainFrame:IsShown() then
-                UpdateLootDisplay()
+                if mainFrame:IsShown() then
+                    UpdateLootDisplay()
+                end
+
+                print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s). Marked as received.",
+                    displayLink, sourceName, difficultyText, specName))
             end
+        end
 
-            print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s). Marked as received.",
-                displayLink, sourceName, difficultyText, specName))
+        if Item and Item.CreateFromItemID then
+            local itemObj = Item:CreateFromItemID(itemID)
+            itemObj:ContinueOnItemLoad(executeTrack)
+        else
+            executeTrack()
         end
     end
 end
