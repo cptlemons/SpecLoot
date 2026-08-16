@@ -20,14 +20,102 @@ mainFrame:RegisterForDrag("LeftButton")
 mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
 mainFrame:SetScript("OnDragStop", mainFrame.StopMovingOrSizing)
 mainFrame.TitleText:SetText("SpecLoot")
+
+local titleIcon = mainFrame:CreateTexture(nil, "ARTWORK")
+titleIcon:SetSize(16, 16)
+titleIcon:SetPoint("RIGHT", mainFrame.TitleText, "LEFT", -4, 0)
+titleIcon:SetTexture("Interface\\AddOns\\SpecLoot\\icon.png")
+
 mainFrame:Hide()
 
 tinsert(UISpecialFrames, "SpecLootMainFrame")
+
+function SpecLoot_OnAddonCompartmentClick(addonName, button)
+    if mainFrame:IsShown() then
+        mainFrame:Hide()
+    else
+        mainFrame:Show()
+    end
+end
+
+function SpecLoot_OnAddonCompartmentEnter(addonName, button)
+    GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+    GameTooltip:SetText("|cffa335eeSpecLoot|r")
+    GameTooltip:AddLine("Click to toggle the SpecLoot window.", 1, 1, 1)
+    GameTooltip:Show()
+end
+
+function SpecLoot_OnAddonCompartmentLeave(addonName, button)
+    GameTooltip:Hide()
+end
 
 local function InitCharDB()
     SpecLootCharDB = SpecLootCharDB or {}
     SpecLootCharDB.receivedItems = SpecLootCharDB.receivedItems or {}
 end
+
+local function NormalizeKeystoneTier(keyLevel)
+    local lvl = tonumber(keyLevel) or 10
+    if lvl >= 10 then
+        return 10 -- 10+ is all one shared pool
+    elseif lvl >= 2 then
+        return lvl -- 2, 3, 4, 5, 6, 7, 8, 9 are all individual
+    else
+        return 10 -- default
+    end
+end
+
+local function GetReceivedItemKey(vMode, diffOrKeyTier, specID, itemID)
+    if vMode == "raid" then
+        local diff = diffOrKeyTier or selectedRaidDifficulty or 15
+        return "raid:" .. diff .. ":" .. (specID or 0) .. ":" .. itemID
+    else
+        local tier = NormalizeKeystoneTier(diffOrKeyTier or selectedKeystoneLevel or 10)
+        return "dungeon:" .. tier .. ":" .. (specID or 0) .. ":" .. itemID
+    end
+end
+
+local function IsItemReceived(vMode, diffOrKeyTier, specID, itemID)
+    if not SpecLootCharDB or not SpecLootCharDB.receivedItems then
+        return false
+    end
+    local key = GetReceivedItemKey(vMode, diffOrKeyTier, specID, itemID)
+    if SpecLootCharDB.receivedItems[key] then
+        return true
+    end
+    -- Fallback for legacy key format (for dungeons when checking 10+ tier)
+    if vMode ~= "raid" then
+        local tier = NormalizeKeystoneTier(diffOrKeyTier or selectedKeystoneLevel or 10)
+        if tier == 10 then
+            if SpecLootCharDB.receivedItems["dungeon:" .. (specID or 0) .. ":" .. itemID] then
+                return true
+            end
+            if SpecLootCharDB.receivedItems[(specID or 0) .. ":" .. itemID] then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function SetItemReceived(vMode, diffOrKeyTier, specID, itemID, isReceived)
+    InitCharDB()
+    local key = GetReceivedItemKey(vMode, diffOrKeyTier, specID, itemID)
+    SpecLootCharDB.receivedItems[key] = isReceived and true or nil
+    if not isReceived and vMode ~= "raid" then
+        local tier = NormalizeKeystoneTier(diffOrKeyTier or selectedKeystoneLevel or 10)
+        if tier == 10 then
+            SpecLootCharDB.receivedItems["dungeon:" .. (specID or 0) .. ":" .. itemID] = nil
+            SpecLootCharDB.receivedItems[(specID or 0) .. ":" .. itemID] = nil
+        end
+    end
+end
+
+-- Forward declarations for test commands
+local HandleBonusRollResult
+local HandleTestKill
+local HandleTestKey
+local ListReceivedBonusRolls
 
 SLASH_SPECLOOT1 = "/specloot"
 SLASH_SPECLOOT2 = "/sl"
@@ -39,13 +127,43 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "debug" then
         addonTable.Scraper:Scrape(true)
         addonTable.Scraper:EnsureClassClassified(selectedClassID)
-    elseif msg == "clear" or msg == "reset" or msg == "clearrolls" or msg == "resetrolls" then
+    elseif msg:match("^bonus%s+list") or msg:match("^bonus%s+rolls") or msg == "bonus list" or msg == "bonus rolls" or msg == "list" or msg == "rolls" or msg == "listrolls" or msg == "history" then
+        if ListReceivedBonusRolls then
+            ListReceivedBonusRolls()
+        end
+    elseif msg:match("^bonus%s+clear") or msg:match("^bonus%s+reset") or msg == "clear" or msg == "reset" or msg == "clearrolls" or msg == "resetrolls" then
         InitCharDB()
         SpecLootCharDB.receivedItems = {}
         if mainFrame:IsShown() then
             UpdateLootDisplay()
         end
         print("|cffa335eeSpecLoot|r: Cleared all marked bonus roll items for this character.")
+    elseif msg:match("^testkey") or msg:match("^simkey") then
+        local args = {}
+        for w in msg:gmatch("%S+") do table.insert(args, w) end
+        local keyLvl = tonumber(args[2]) or 10
+        if HandleTestKey then
+            HandleTestKey(keyLvl)
+        end
+    elseif msg:match("^testkill") or msg:match("^simkill") then
+        local args = {}
+        for w in msg:gmatch("%S+") do table.insert(args, w) end
+        local bossID = tonumber(args[2]) or 2849
+        local diffID = tonumber(args[3]) or 15
+        if HandleTestKill then
+            HandleTestKill(bossID, diffID)
+        end
+    elseif msg:match("^testroll") or msg:match("^simroll") then
+        local args = {}
+        for w in msg:gmatch("%S+") do table.insert(args, w) end
+        local testItemID = tonumber(args[2])
+        local testSpecID = tonumber(args[3]) or 0
+        if testItemID and HandleBonusRollResult then
+            local link = select(2, C_Item.GetItemInfo(testItemID)) or ("|cffa335ee|Hitem:" .. testItemID .. ":0:0:0:0:0:0:0:0|h[" .. testItemID .. "]|h|r")
+            HandleBonusRollResult("item", link, 1, testSpecID)
+        else
+            print("|cffa335eeSpecLoot|r usage: /sl testroll <itemID> [specID]")
+        end
     elseif msg:match("^probe") then
         local args = {}
         for w in msg:gmatch("%S+") do table.insert(args, w) end
@@ -62,7 +180,11 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "help" or msg == "?" then
         print("|cffa335eeSpecLoot|r commands:")
         print("  /sl                  toggle the main window")
-        print("  /sl clear            reset marked bonus rolls for this character")
+        print("  /sl bonus list       list all marked bonus rolls for this character")
+        print("  /sl bonus clear      reset marked bonus rolls for this character")
+        print("  /sl testroll <id>    simulate receiving a bonus roll item")
+        print("  /sl testkill <boss>  simulate a raid boss kill (e.g. /sl testkill 2849)")
+        print("  /sl testkey <lvl>    simulate an active keystone level (e.g. /sl testkey 10)")
         print("  /sl rescan           force a fresh scrape (quiet)")
         print("  /sl debug            re-scrape with per-encounter verbose output")
         print("  /sl probe <i> <e>    try every difficulty ID against one (instance, encounter)")
@@ -113,16 +235,6 @@ local function ScheduleRefresh()
         end
     end)
 end
-
--- Only watch for item-info refreshes at the global level. The expensive setup
--- (scrape + preload) is deferred to OnShow so login is effectively free.
-mainFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-mainFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "GET_ITEM_INFO_RECEIVED" then
-        addonTable.Scraper:OnItemInfoReceived(arg1)
-        ScheduleRefresh()
-    end
-end)
 
 -----------------------------------------
 -- HELPERS
@@ -181,6 +293,79 @@ local function GetTrackLabel(track, rank)
     local trackData = addonTable.UpgradeTracks[track]
     local maxRank = trackData and #trackData or 6
     return track:sub(1, 1):upper() .. track:sub(2) .. " " .. rank .. "/" .. maxRank
+end
+
+local function GetBonusRollTrackInfo(vMode, keystoneLevel, raidDifficulty, bossEncID)
+    if vMode == "dungeon" then
+        local rule
+        for _, r in ipairs(addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules or {}) do
+            for _, k in ipairs(r.keystones) do
+                if k == keystoneLevel then rule = r; break end
+            end
+            if rule then break end
+        end
+        if not rule then
+            rule = addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules and addonTable.KeystoneMapping.rules[#addonTable.KeystoneMapping.rules]
+        end
+        local gv = rule and rule.greatVault or { track = "myth", rank = 1 }
+        local trackName = gv.track
+        local rank = gv.rank
+        local trackData = addonTable.UpgradeTracks and addonTable.UpgradeTracks[trackName]
+        local maxRank = trackData and #trackData or 6
+        local ilvl = trackData and trackData[rank] and trackData[rank].ilvl or 318
+        local bonusId = trackData and trackData[rank] and trackData[rank].bonusId or 12849
+
+        local shortTrack = trackName:sub(1, 1):upper() .. trackName:sub(2)
+        local trackLabel = rank .. "/" .. maxRank .. " " .. shortTrack
+        return ilvl, bonusId, trackLabel
+    else
+        local bossIndex = 1
+        if bossEncID and addonTable.RaidDatabase then
+            for _, raid in ipairs(addonTable.RaidDatabase) do
+                for idx, enc in ipairs(raid.encounters or {}) do
+                    if enc.id == bossEncID then
+                        bossIndex = enc.index or idx
+                        break
+                    end
+                end
+            end
+        end
+        local bossRank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
+
+        local ilvl, bonusId, trackLabel
+        if raidDifficulty == 17 then
+            -- LFR -> Normal / Champ track
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["normal"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 292
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12833
+            trackLabel = bossRank .. "/6 Champ"
+        elseif raidDifficulty == 14 then
+            -- Normal -> Heroic / Hero track
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["heroic"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 305
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12841
+            trackLabel = bossRank .. "/6 Hero"
+        elseif raidDifficulty == 15 then
+            -- Heroic -> Mythic / Myth track (1/6 Myth .. 4/6 Myth)
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["mythic"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 318
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12849
+            trackLabel = bossRank .. "/6 Myth"
+        else
+            -- Mythic (16) -> 6/6 Myth or 9/6 Myth
+            if bossRank >= 3 then
+                ilvl = 334
+                bonusId = 12854
+                trackLabel = "9/6 Myth"
+            else
+                ilvl = 334
+                bonusId = 12854
+                trackLabel = "6/6 Myth"
+            end
+        end
+
+        return ilvl, bonusId, trackLabel
+    end
 end
 
 local function GetClassSpecs(classID)
@@ -251,6 +436,415 @@ local function BuildItemLink(itemID, bonusId)
     end
     return "item:" .. itemID
 end
+
+local function BuildItemHyperlink(itemID, bonusId)
+    local rawString = BuildItemLink(itemID, bonusId)
+    local itemName = C_Item.GetItemNameByID(itemID)
+    if not itemName or itemName == "" then
+        itemName = select(1, C_Item.GetItemInfo(itemID))
+    end
+    if not itemName or itemName == "" then
+        itemName = select(1, C_Item.GetItemInfoInstant(itemID))
+    end
+    if not itemName or itemName == "" then
+        itemName = "Item " .. itemID
+    end
+
+    local _, _, itemQuality = C_Item.GetItemInfoInstant(itemID)
+    local hexColor = (itemQuality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[itemQuality] and ITEM_QUALITY_COLORS[itemQuality].hex) or "|cffa335ee"
+    return hexColor .. "|H" .. rawString .. "|h[" .. itemName .. "]|h|r"
+end
+
+ListReceivedBonusRolls = function()
+    InitCharDB()
+    if not SpecLootCharDB or not SpecLootCharDB.receivedItems or not next(SpecLootCharDB.receivedItems) then
+        print("|cffa335eeSpecLoot|r: No bonus roll items marked as received for this character.")
+        return
+    end
+
+    local entries = {}
+    for key, isRec in pairs(SpecLootCharDB.receivedItems) do
+        if isRec then
+            local raidDiff, dungeonTier, specID, itemID
+            local vMode = "dungeon"
+
+            if key:match("^raid:") then
+                vMode = "raid"
+                local d, s, i = key:match("^raid:(%d+):(%d+):(%d+)")
+                raidDiff = tonumber(d)
+                specID = tonumber(s)
+                itemID = tonumber(i)
+            elseif key:match("^dungeon:%d+:%d+:%d+") then
+                local t, s, i = key:match("^dungeon:(%d+):(%d+):(%d+)")
+                dungeonTier = tonumber(t)
+                specID = tonumber(s)
+                itemID = tonumber(i)
+            elseif key:match("^dungeon:") then
+                local s, i = key:match("^dungeon:(%d+):(%d+)")
+                dungeonTier = 10
+                specID = tonumber(s)
+                itemID = tonumber(i)
+            else
+                local s, i = key:match("^(%d+):(%d+)")
+                dungeonTier = 10
+                specID = tonumber(s)
+                itemID = tonumber(i)
+            end
+
+            if itemID then
+                local sourceName = "Unknown Source"
+                local difficultyText = "Mythic+ (10+)"
+                local scaledBonusId = nil
+
+                if vMode == "raid" then
+                    local bossName = "Raid Boss"
+                    local raidName = "Raid"
+                    local encID = nil
+                    if raids then
+                        for _, r in ipairs(raids) do
+                            for _, enc in ipairs(r.encounters or {}) do
+                                for _, id in ipairs(enc.items or {}) do
+                                    if id == itemID then
+                                        bossName = enc.name
+                                        raidName = r.name
+                                        encID = enc.id
+                                        break
+                                    end
+                                end
+                                if encID then break end
+                            end
+                            if encID then break end
+                        end
+                    end
+                    sourceName = string.format("%s in %s", bossName, raidName)
+                    local diffInfo = GetRaidDifficultyInfo(raidDiff or 15)
+                    difficultyText = diffInfo and diffInfo.name or "Heroic"
+                    local _, bId = GetBonusRollTrackInfo("raid", 10, raidDiff or 15, encID)
+                    scaledBonusId = bId
+                else
+                    local dungeonName = nil
+                    if dungeons then
+                        for _, d in ipairs(dungeons) do
+                            for _, id in ipairs(d.lootTable or {}) do
+                                if id == itemID then
+                                    dungeonName = d.name
+                                    break
+                                end
+                            end
+                            if dungeonName then break end
+                        end
+                    end
+                    sourceName = dungeonName or "Mythic+ Dungeon"
+                    local dTier = dungeonTier or 10
+                    if dTier >= 10 then
+                        difficultyText = "Mythic+ (10+)"
+                    else
+                        difficultyText = string.format("Mythic+ (+%d)", dTier)
+                    end
+                    local _, bId = GetBonusRollTrackInfo("dungeon", dTier)
+                    scaledBonusId = bId
+                end
+
+                local specName = "All Specs"
+                if specID and specID > 0 then
+                    local _, sName = GetSpecializationInfoByID(specID)
+                    specName = sName or tostring(specID)
+                end
+
+                local itemLink = BuildItemHyperlink(itemID, scaledBonusId)
+                entries[#entries + 1] = {
+                    itemLink = itemLink,
+                    sourceName = sourceName,
+                    difficultyText = difficultyText,
+                    specName = specName,
+                }
+            end
+        end
+    end
+
+    if #entries == 0 then
+        print("|cffa335eeSpecLoot|r: No bonus roll items marked as received for this character.")
+        return
+    end
+
+    print(string.format("|cffa335eeSpecLoot|r: Marked Bonus Roll Items for %s (%d):", UnitName("player") or "Character", #entries))
+    for idx, e in ipairs(entries) do
+        print(string.format("  |cffaaaaaa%d.|r %s from |cffffffff%s|r on |cff55ff55%s|r (Loot Spec: |cffffd100%s|r)",
+            idx, e.itemLink, e.sourceName, e.difficultyText, e.specName))
+    end
+end
+
+-----------------------------------------
+-- BONUS ROLL AUTO TRACKING
+-----------------------------------------
+
+local cachedKeyLevel = nil
+local cachedRaidMapID = nil
+local cachedRaidDifficultyID = nil
+local cachedRaidName = nil
+local lastKilledBossEncID = nil
+local lastKilledBossName = nil
+
+local function CacheActiveKeystoneLevel()
+    if not C_ChallengeMode then return end
+    local level = C_ChallengeMode.GetActiveKeystoneInfo and C_ChallengeMode.GetActiveKeystoneInfo()
+    if level and level > 0 then
+        cachedKeyLevel = level
+        InitCharDB()
+        SpecLootCharDB.cachedKeyLevel = level
+    end
+end
+
+local function GetEffectiveLootSpecID(eventSpecID)
+    if eventSpecID and eventSpecID > 0 then
+        return eventSpecID
+    end
+    local lootSpecID = GetLootSpecialization and GetLootSpecialization() or 0
+    if lootSpecID and lootSpecID > 0 then
+        return lootSpecID
+    end
+    local specIndex = GetSpecialization and GetSpecialization()
+    if specIndex and specIndex > 0 then
+        local specID = GetSpecializationInfo and GetSpecializationInfo(specIndex)
+        if specID and specID > 0 then
+            return specID
+        end
+    end
+    return 0
+end
+
+HandleTestKey = function(keyLevel)
+    lastKilledBossEncID = nil
+    lastKilledBossName = nil
+    cachedRaidMapID = nil
+    cachedRaidDifficultyID = nil
+    cachedRaidName = nil
+    cachedKeyLevel = keyLevel
+    InitCharDB()
+    SpecLootCharDB.cachedKeyLevel = keyLevel
+    print(string.format("|cffa335eeSpecLoot|r: Simulated active keystone level +%d.", keyLevel))
+end
+
+HandleTestKill = function(bossEncID, diffID)
+    cachedKeyLevel = nil
+    if SpecLootCharDB then
+        SpecLootCharDB.cachedKeyLevel = nil
+    end
+    lastKilledBossEncID = bossEncID
+    cachedRaidDifficultyID = diffID or 15
+    local bossName = "Unknown Boss"
+    local raidName = "Raid"
+    if raids then
+        for _, r in ipairs(raids) do
+            for _, enc in ipairs(r.encounters or {}) do
+                if enc.id == bossEncID then
+                    bossName = enc.name
+                    raidName = r.name
+                    break
+                end
+            end
+        end
+    end
+    lastKilledBossName = bossName
+    cachedRaidName = raidName
+    local diffInfo = GetRaidDifficultyInfo(cachedRaidDifficultyID)
+    local diffName = diffInfo and diffInfo.name or tostring(cachedRaidDifficultyID)
+    print(string.format("|cffa335eeSpecLoot|r: Simulated boss kill: %s in %s (%s).", bossName, raidName, diffName))
+end
+
+HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
+    if typeIdentifier and typeIdentifier ~= "item" then
+        return
+    end
+    if not itemLink or type(itemLink) ~= "string" then
+        return
+    end
+
+    local itemIDStr = itemLink:match("|Hitem:(%d+):")
+    local itemID = itemIDStr and tonumber(itemIDStr) or tonumber(itemLink)
+    if not itemID then
+        return
+    end
+
+    local effectiveSpecID = GetEffectiveLootSpecID(specID)
+    local specName
+    if effectiveSpecID and effectiveSpecID > 0 then
+        specName = select(2, GetSpecializationInfoByID(effectiveSpecID))
+    end
+    if not specName or specName == "" then
+        specName = "your specialization"
+    end
+
+    local name, instanceType, difficultyID, difficultyName, _, _, _, instanceID = GetInstanceInfo()
+
+    local currentKeyLevel = (C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo and C_ChallengeMode.GetActiveKeystoneInfo()) or cachedKeyLevel
+    if (not currentKeyLevel or currentKeyLevel == 0) and SpecLootCharDB then
+        currentKeyLevel = SpecLootCharDB.cachedKeyLevel
+    end
+
+    -- Check if item belongs to a raid encounter
+    local raidMatch = nil
+    if raids then
+        for _, r in ipairs(raids) do
+            for _, enc in ipairs(r.encounters or {}) do
+                if lastKilledBossEncID and enc.id == lastKilledBossEncID then
+                    raidMatch = { raid = r, enc = enc }
+                    break
+                end
+                for _, id in ipairs(enc.items or {}) do
+                    if id == itemID then
+                        raidMatch = { raid = r, enc = enc }
+                        break
+                    end
+                end
+                if raidMatch then break end
+            end
+            if raidMatch then break end
+        end
+    end
+
+    -- Check if item belongs to a dungeon
+    local dungeonMatch = nil
+    if dungeons then
+        for _, d in ipairs(dungeons) do
+            if d.instanceId == instanceID or d.name == name then
+                dungeonMatch = d
+                break
+            end
+            for _, id in ipairs(d.lootTable or {}) do
+                if id == itemID then
+                    dungeonMatch = d
+                    break
+                end
+            end
+            if dungeonMatch then break end
+        end
+    end
+
+    local sourceName = nil
+    local difficultyText = nil
+    local scaledBonusId = nil
+    local shouldTrack = false
+
+    local isInsideRaid = (instanceType == "raid")
+    local isInsideParty = (instanceType == "party")
+
+    if isInsideRaid or (raidMatch and not isInsideParty) then
+        local bossName = lastKilledBossName or (raidMatch and raidMatch.enc and raidMatch.enc.name)
+        local raidName = cachedRaidName or (raidMatch and raidMatch.raid and raidMatch.raid.name) or (name ~= "" and name) or "Raid"
+        local encID = lastKilledBossEncID or (raidMatch and raidMatch.enc and raidMatch.enc.id)
+
+        if bossName and bossName ~= "" then
+            sourceName = string.format("%s in %s", bossName, raidName)
+        else
+            sourceName = raidName
+        end
+
+        local diffID = (difficultyID and difficultyID > 0 and isInsideRaid) and difficultyID or cachedRaidDifficultyID or selectedRaidDifficulty or 15
+        local diffInfo = GetRaidDifficultyInfo(diffID)
+        difficultyText = diffInfo and diffInfo.name or difficultyName or "Heroic"
+
+        local _, bId = GetBonusRollTrackInfo("raid", 10, diffID, encID)
+        scaledBonusId = bId
+        shouldTrack = true
+
+    elseif isInsideParty or dungeonMatch then
+        local rawKeyLvl = currentKeyLevel or selectedKeystoneLevel or 10
+        local dungeonName = (dungeonMatch and dungeonMatch.name) or (name ~= "" and name) or "Mythic+ Dungeon"
+        sourceName = dungeonName
+        difficultyText = string.format("Mythic+ (+%d)", rawKeyLvl)
+
+        local _, bId = GetBonusRollTrackInfo("dungeon", rawKeyLvl)
+        scaledBonusId = bId
+        shouldTrack = true
+    end
+
+    if shouldTrack and sourceName and difficultyText then
+        local function executeTrack()
+            local vMode = (isInsideRaid or (raidMatch and not isInsideParty)) and "raid" or "dungeon"
+            local diffOrKeyTier
+            if vMode == "raid" then
+                diffOrKeyTier = (difficultyID and difficultyID > 0 and isInsideRaid) and difficultyID or cachedRaidDifficultyID or selectedRaidDifficulty or 15
+            else
+                local rawKeyLvl = currentKeyLevel or selectedKeystoneLevel or 10
+                diffOrKeyTier = NormalizeKeystoneTier(rawKeyLvl)
+            end
+
+            local alreadyReceived = IsItemReceived(vMode, diffOrKeyTier, effectiveSpecID, itemID)
+            local displayLink = BuildItemHyperlink(itemID, scaledBonusId)
+
+            if alreadyReceived then
+                print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s), but it was already marked as received.",
+                    displayLink, sourceName, difficultyText, specName))
+            else
+                SetItemReceived(vMode, diffOrKeyTier, effectiveSpecID, itemID, true)
+
+                if mainFrame:IsShown() then
+                    UpdateLootDisplay()
+                end
+
+                print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s). Marked as received.",
+                    displayLink, sourceName, difficultyText, specName))
+            end
+        end
+
+        if Item and Item.CreateFromItemID then
+            local itemObj = Item:CreateFromItemID(itemID)
+            itemObj:ContinueOnItemLoad(executeTrack)
+        else
+            executeTrack()
+        end
+    end
+end
+
+-- Global Event Listener
+mainFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+mainFrame:RegisterEvent("BONUS_ROLL_RESULT")
+mainFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+mainFrame:RegisterEvent("CHALLENGE_MODE_START")
+mainFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+mainFrame:RegisterEvent("ENCOUNTER_END")
+mainFrame:RegisterEvent("BOSS_KILL")
+
+mainFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "GET_ITEM_INFO_RECEIVED" then
+        local itemID = ...
+        addonTable.Scraper:OnItemInfoReceived(itemID)
+        ScheduleRefresh()
+    elseif event == "BONUS_ROLL_RESULT" then
+        local typeIdentifier, itemLink, quantity, specID = ...
+        HandleBonusRollResult(typeIdentifier, itemLink, quantity, specID)
+    elseif event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_COMPLETED" then
+        CacheActiveKeystoneLevel()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if IsInInstance and IsInInstance() then
+            local name, instanceType, difficultyID, difficultyName, _, _, _, instanceID = GetInstanceInfo()
+            if instanceType == "party" then
+                CacheActiveKeystoneLevel()
+                cachedRaidMapID = nil
+                cachedRaidDifficultyID = nil
+                cachedRaidName = nil
+            elseif instanceType == "raid" then
+                cachedRaidMapID = instanceID
+                cachedRaidDifficultyID = difficultyID
+                cachedRaidName = name
+            end
+        end
+    elseif event == "ENCOUNTER_END" then
+        local encounterID, encounterName, difficultyID, groupSize, success = ...
+        if success == 1 then
+            lastKilledBossEncID = encounterID
+            lastKilledBossName = encounterName
+            if difficultyID and difficultyID > 0 then
+                cachedRaidDifficultyID = difficultyID
+            end
+        end
+    elseif event == "BOSS_KILL" then
+        local encounterID, name = ...
+        lastKilledBossEncID = encounterID
+        lastKilledBossName = name
+    end
+end)
 
 -----------------------------------------
 -- CROSS-SPEC HIGHLIGHT REGISTRY
@@ -576,79 +1170,6 @@ end
 
 local isBonusRollMode = false
 
-local function GetBonusRollTrackInfo(vMode, keystoneLevel, raidDifficulty, bossEncID)
-    if vMode == "dungeon" then
-        local rule
-        for _, r in ipairs(addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules or {}) do
-            for _, k in ipairs(r.keystones) do
-                if k == keystoneLevel then rule = r; break end
-            end
-            if rule then break end
-        end
-        if not rule then
-            rule = addonTable.KeystoneMapping and addonTable.KeystoneMapping.rules and addonTable.KeystoneMapping.rules[#addonTable.KeystoneMapping.rules]
-        end
-        local gv = rule and rule.greatVault or { track = "myth", rank = 1 }
-        local trackName = gv.track
-        local rank = gv.rank
-        local trackData = addonTable.UpgradeTracks and addonTable.UpgradeTracks[trackName]
-        local maxRank = trackData and #trackData or 6
-        local ilvl = trackData and trackData[rank] and trackData[rank].ilvl or 318
-        local bonusId = trackData and trackData[rank] and trackData[rank].bonusId or 12849
-
-        local shortTrack = trackName:sub(1, 1):upper() .. trackName:sub(2)
-        local trackLabel = rank .. "/" .. maxRank .. " " .. shortTrack
-        return ilvl, bonusId, trackLabel
-    else
-        local bossIndex = 1
-        if bossEncID and addonTable.RaidDatabase then
-            for _, raid in ipairs(addonTable.RaidDatabase) do
-                for idx, enc in ipairs(raid.encounters or {}) do
-                    if enc.id == bossEncID then
-                        bossIndex = enc.index or idx
-                        break
-                    end
-                end
-            end
-        end
-        local bossRank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
-
-        local ilvl, bonusId, trackLabel
-        if raidDifficulty == 17 then
-            -- LFR -> Normal / Champ track
-            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["normal"]
-            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 292
-            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12833
-            trackLabel = bossRank .. "/6 Champ"
-        elseif raidDifficulty == 14 then
-            -- Normal -> Heroic / Hero track
-            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["heroic"]
-            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 305
-            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12841
-            trackLabel = bossRank .. "/6 Hero"
-        elseif raidDifficulty == 15 then
-            -- Heroic -> Mythic / Myth track (1/6 Myth .. 4/6 Myth)
-            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["mythic"]
-            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 318
-            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12849
-            trackLabel = bossRank .. "/6 Myth"
-        else
-            -- Mythic (16) -> 6/6 Myth or 9/6 Myth
-            if bossRank >= 3 then
-                ilvl = 334
-                bonusId = 12854
-                trackLabel = "9/6 Myth"
-            else
-                ilvl = 334
-                bonusId = 12854
-                trackLabel = "6/6 Myth"
-            end
-        end
-
-        return ilvl, bonusId, trackLabel
-    end
-end
-
 local mythicTab = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
 mythicTab:SetSize(80, 22)
 mythicTab:SetText("Mythic+")
@@ -841,10 +1362,9 @@ local function CreateOrReuseItemFrame(pool, index, parent)
 
         itemFrame:SetScript("OnClick", function(self, button)
             if button == "RightButton" and isBonusRollMode then
-                InitCharDB()
-                local key = (self.specID or 0) .. ":" .. self.itemID
-                local isReceived = not SpecLootCharDB.receivedItems[key]
-                SpecLootCharDB.receivedItems[key] = isReceived and true or nil
+                local diffOrTier = (self.viewMode == "raid") and self.raidDifficulty or self.keystoneLevel
+                local isReceived = not IsItemReceived(self.viewMode, diffOrTier, self.specID, self.itemID)
+                SetItemReceived(self.viewMode, diffOrTier, self.specID, self.itemID, isReceived)
 
                 local itemName = C_Item.GetItemInfo(self.itemID) or "Loading..."
                 local slotName = GetSlotName(self.itemID)
@@ -863,9 +1383,8 @@ local function CreateOrReuseItemFrame(pool, index, parent)
             local link = self.itemLink or BuildItemLink(self.itemID, self.bonusId)
             GameTooltip:SetHyperlink(link)
             if isBonusRollMode then
-                InitCharDB()
-                local key = (self.specID or 0) .. ":" .. self.itemID
-                local isRec = SpecLootCharDB.receivedItems[key]
+                local diffOrTier = (self.viewMode == "raid") and self.raidDifficulty or self.keystoneLevel
+                local isRec = IsItemReceived(self.viewMode, diffOrTier, self.specID, self.itemID)
                 GameTooltip:AddLine(" ")
                 if isRec then
                     GameTooltip:AddLine("|cff777777Status: OBTAINED / RECEIVED|r")
@@ -901,15 +1420,17 @@ local function AddItemToPool(pool, parent, index, itemID, bonusId, itemLink, sin
     itemFrame.bonusId = bonusId
     itemFrame.itemLink = itemLink
     itemFrame.trackLabel = trackLabel
+    itemFrame.viewMode = viewMode
+    itemFrame.raidDifficulty = selectedRaidDifficulty
+    itemFrame.keystoneLevel = selectedKeystoneLevel
 
     local itemName = C_Item.GetItemInfo(itemID)
     local itemData = GetItemData(itemID)
     local dbIcon = (itemData and itemData.icon) or C_Item.GetItemIconByID(itemID)
     local slotName = GetSlotName(itemID)
 
-    InitCharDB()
-    local key = (specID or 0) .. ":" .. itemID
-    local isReceived = SpecLootCharDB.receivedItems and SpecLootCharDB.receivedItems[key]
+    local diffOrTier = (viewMode == "raid") and selectedRaidDifficulty or selectedKeystoneLevel
+    local isReceived = IsItemReceived(viewMode, diffOrTier, specID, itemID)
 
     if isBonusRollMode then
         local labelStr = trackLabel and ("|cff55ff55" .. trackLabel .. "|r") or ""

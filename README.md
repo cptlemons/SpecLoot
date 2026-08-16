@@ -10,8 +10,10 @@ Useful for picking which loot spec to set before pushing a key or pulling a boss
 
 * **Side-by-Side Comparison:** View loot for all specs of a class simultaneously.
 * **Shared Loot Panel:** Quickly identify items that drop for *every* spec (e.g., necks, rings, cloaks).
-* **Bonus Rolls & Great Vault Tracking:** Check the "Bonus Rolls" mode toggle to view scaled Great Vault item levels and upgrade track badges (e.g., `1/6 Myth`, `4/6 Myth`, `6/6 Myth`). Right-click any item in this mode to mark it as received (applying a strikethrough line and dimming the icon), removing it from your active loot pool per-spec.
+* **Bonus Rolls & Great Vault Tracking:** Check the "Bonus Rolls" mode toggle to view scaled Great Vault item levels and upgrade track badges (e.g., `1/6 Myth`, `4/6 Myth`, `6/6 Myth`). Right-click any item in this mode to mark it as received (applying a strikethrough line and dimming the icon), removing it from your active loot pool per-spec. Mythic+ keystone levels +2 through +9 have independent loot pools while +10 and above share a unified pool. Raid loot pools are isolated per difficulty (LFR, Normal, Heroic, Mythic).
+* **Automated Bonus Roll Detection:** Automatically captures bonus roll rewards (`BONUS_ROLL_RESULT`), detects the active dungeon & keystone level or raid boss encounter, attributes the item to your effective loot specialization and difficulty/key tier, marks it as received in real-time, and prints a formatted confirmation to chat with scaled item level tooltips.
 * **Smart Highlighting:** Hover over an item to see it light up in every spec panel where it appears.
+* **Addon Compartment & In-Game Icon:** Integrated with the modern Minimap Addon Compartment menu and AddOns window.
 * **Difficulty-Aware Tooltips & Upgrade Tracks:** Real-time item level previews and upgrade tracks based on Keystone level (+2 to +10) or Raid difficulty (LFR through Mythic).
 * **Tier Token & Omni-Curio Support:** Accurately classifies class tier tokens and omni-curios for applicable specs while filtering out cosmetic transmogs, mounts, pets, and non-equipment clutter.
 * **Zero Manual In-Game Maintenance:** Pre-packages current-season loot manifests while using an intelligent in-game Encounter Journal scraper for live validation and lazy-loaded spec caching without UI freeze or taint.
@@ -26,7 +28,11 @@ Useful for picking which loot spec to set before pushing a key or pulling a boss
 | Command | Action |
 | :--- | :--- |
 | `/sl` or `/specloot` | Toggle the main interface |
-| `/sl clear` or `/sl reset` | Reset all marked bonus roll items for the current character |
+| `/sl bonus list` or `/sl bonus rolls` | List all marked bonus roll items for the current character with item link, source, difficulty, and loot spec |
+| `/sl bonus clear` or `/sl clear` | Reset all marked bonus roll items for the current character |
+| `/sl testroll <id>` | Simulate receiving a bonus roll item |
+| `/sl testkill <bossID>` | Simulate a raid boss kill |
+| `/sl testkey <level>` | Simulate an active keystone level |
 | `/sl status` | Check the health of your local loot cache |
 | `/sl rescan` | Force a fresh scrape of the Encounter Journal |
 | `/sl debug` | Re-scrape with per-encounter verbose debug output |
