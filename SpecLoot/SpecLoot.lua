@@ -54,36 +54,60 @@ local function InitCharDB()
     SpecLootCharDB.receivedItems = SpecLootCharDB.receivedItems or {}
 end
 
-local function GetReceivedItemKey(vMode, raidDiff, specID, itemID)
-    if vMode == "raid" then
-        local diff = raidDiff or selectedRaidDifficulty or 15
-        return "raid:" .. diff .. ":" .. (specID or 0) .. ":" .. itemID
+local function NormalizeKeystoneTier(keyLevel)
+    local lvl = tonumber(keyLevel) or 10
+    if lvl >= 10 then
+        return 10 -- 10+ is all one shared pool
+    elseif lvl >= 2 then
+        return lvl -- 2, 3, 4, 5, 6, 7, 8, 9 are all individual
     else
-        return "dungeon:" .. (specID or 0) .. ":" .. itemID
+        return 10 -- default
     end
 end
 
-local function IsItemReceived(vMode, raidDiff, specID, itemID)
+local function GetReceivedItemKey(vMode, diffOrKeyTier, specID, itemID)
+    if vMode == "raid" then
+        local diff = diffOrKeyTier or selectedRaidDifficulty or 15
+        return "raid:" .. diff .. ":" .. (specID or 0) .. ":" .. itemID
+    else
+        local tier = NormalizeKeystoneTier(diffOrKeyTier or selectedKeystoneLevel or 10)
+        return "dungeon:" .. tier .. ":" .. (specID or 0) .. ":" .. itemID
+    end
+end
+
+local function IsItemReceived(vMode, diffOrKeyTier, specID, itemID)
     if not SpecLootCharDB or not SpecLootCharDB.receivedItems then
         return false
     end
-    local key = GetReceivedItemKey(vMode, raidDiff, specID, itemID)
+    local key = GetReceivedItemKey(vMode, diffOrKeyTier, specID, itemID)
     if SpecLootCharDB.receivedItems[key] then
         return true
     end
-    -- Fallback for legacy key format (for dungeons)
-    if vMode ~= "raid" and SpecLootCharDB.receivedItems[(specID or 0) .. ":" .. itemID] then
-        return true
+    -- Fallback for legacy key format (for dungeons when checking 10+ tier)
+    if vMode ~= "raid" then
+        local tier = NormalizeKeystoneTier(diffOrKeyTier or selectedKeystoneLevel or 10)
+        if tier == 10 then
+            if SpecLootCharDB.receivedItems["dungeon:" .. (specID or 0) .. ":" .. itemID] then
+                return true
+            end
+            if SpecLootCharDB.receivedItems[(specID or 0) .. ":" .. itemID] then
+                return true
+            end
+        end
     end
     return false
 end
 
-local function SetItemReceived(vMode, raidDiff, specID, itemID, isReceived)
+local function SetItemReceived(vMode, diffOrKeyTier, specID, itemID, isReceived)
     InitCharDB()
-    local key = GetReceivedItemKey(vMode, raidDiff, specID, itemID)
+    local key = GetReceivedItemKey(vMode, diffOrKeyTier, specID, itemID)
     SpecLootCharDB.receivedItems[key] = isReceived and true or nil
     if not isReceived and vMode ~= "raid" then
-        SpecLootCharDB.receivedItems[(specID or 0) .. ":" .. itemID] = nil
+        local tier = NormalizeKeystoneTier(diffOrKeyTier or selectedKeystoneLevel or 10)
+        if tier == 10 then
+            SpecLootCharDB.receivedItems["dungeon:" .. (specID or 0) .. ":" .. itemID] = nil
+            SpecLootCharDB.receivedItems[(specID or 0) .. ":" .. itemID] = nil
+        end
     end
 end
 
@@ -441,7 +465,7 @@ ListReceivedBonusRolls = function()
     local entries = {}
     for key, isRec in pairs(SpecLootCharDB.receivedItems) do
         if isRec then
-            local raidDiff, specID, itemID
+            local raidDiff, dungeonTier, specID, itemID
             local vMode = "dungeon"
 
             if key:match("^raid:") then
@@ -450,12 +474,19 @@ ListReceivedBonusRolls = function()
                 raidDiff = tonumber(d)
                 specID = tonumber(s)
                 itemID = tonumber(i)
+            elseif key:match("^dungeon:%d+:%d+:%d+") then
+                local t, s, i = key:match("^dungeon:(%d+):(%d+):(%d+)")
+                dungeonTier = tonumber(t)
+                specID = tonumber(s)
+                itemID = tonumber(i)
             elseif key:match("^dungeon:") then
                 local s, i = key:match("^dungeon:(%d+):(%d+)")
+                dungeonTier = 10
                 specID = tonumber(s)
                 itemID = tonumber(i)
             else
                 local s, i = key:match("^(%d+):(%d+)")
+                dungeonTier = 10
                 specID = tonumber(s)
                 itemID = tonumber(i)
             end
@@ -504,8 +535,13 @@ ListReceivedBonusRolls = function()
                         end
                     end
                     sourceName = dungeonName or "Mythic+ Dungeon"
-                    difficultyText = "Mythic+ (10+)"
-                    local _, bId = GetBonusRollTrackInfo("dungeon", 10)
+                    local dTier = dungeonTier or 10
+                    if dTier >= 10 then
+                        difficultyText = "Mythic+ (10+)"
+                    else
+                        difficultyText = string.format("Mythic+ (+%d)", dTier)
+                    end
+                    local _, bId = GetBonusRollTrackInfo("dungeon", dTier)
                     scaledBonusId = bId
                 end
 
@@ -713,16 +749,12 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
         shouldTrack = true
 
     elseif isInsideParty or dungeonMatch then
-        -- M+ Threshold rule: do not auto track if keystone is < 10
-        if currentKeyLevel and currentKeyLevel < 10 then
-            return -- Ignore M+ bonus rolls below +10
-        end
-
+        local rawKeyLvl = currentKeyLevel or selectedKeystoneLevel or 10
         local dungeonName = (dungeonMatch and dungeonMatch.name) or (name ~= "" and name) or "Mythic+ Dungeon"
         sourceName = dungeonName
-        difficultyText = (currentKeyLevel and currentKeyLevel >= 10) and string.format("Mythic+ (+%d)", currentKeyLevel) or "Mythic+ (10+)"
+        difficultyText = string.format("Mythic+ (+%d)", rawKeyLvl)
 
-        local _, bId = GetBonusRollTrackInfo("dungeon", currentKeyLevel or 10)
+        local _, bId = GetBonusRollTrackInfo("dungeon", rawKeyLvl)
         scaledBonusId = bId
         shouldTrack = true
     end
@@ -730,16 +762,22 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
     if shouldTrack and sourceName and difficultyText then
         local function executeTrack()
             local vMode = (isInsideRaid or (raidMatch and not isInsideParty)) and "raid" or "dungeon"
-            local diffForDB = (vMode == "raid") and ((difficultyID and difficultyID > 0 and isInsideRaid) and difficultyID or cachedRaidDifficultyID or selectedRaidDifficulty or 15) or nil
+            local diffOrKeyTier
+            if vMode == "raid" then
+                diffOrKeyTier = (difficultyID and difficultyID > 0 and isInsideRaid) and difficultyID or cachedRaidDifficultyID or selectedRaidDifficulty or 15
+            else
+                local rawKeyLvl = currentKeyLevel or selectedKeystoneLevel or 10
+                diffOrKeyTier = NormalizeKeystoneTier(rawKeyLvl)
+            end
 
-            local alreadyReceived = IsItemReceived(vMode, diffForDB, effectiveSpecID, itemID)
+            local alreadyReceived = IsItemReceived(vMode, diffOrKeyTier, effectiveSpecID, itemID)
             local displayLink = BuildItemHyperlink(itemID, scaledBonusId)
 
             if alreadyReceived then
                 print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s), but it was already marked as received.",
                     displayLink, sourceName, difficultyText, specName))
             else
-                SetItemReceived(vMode, diffForDB, effectiveSpecID, itemID, true)
+                SetItemReceived(vMode, diffOrKeyTier, effectiveSpecID, itemID, true)
 
                 if mainFrame:IsShown() then
                     UpdateLootDisplay()
@@ -1324,8 +1362,9 @@ local function CreateOrReuseItemFrame(pool, index, parent)
 
         itemFrame:SetScript("OnClick", function(self, button)
             if button == "RightButton" and isBonusRollMode then
-                local isReceived = not IsItemReceived(self.viewMode, self.raidDifficulty, self.specID, self.itemID)
-                SetItemReceived(self.viewMode, self.raidDifficulty, self.specID, self.itemID, isReceived)
+                local diffOrTier = (self.viewMode == "raid") and self.raidDifficulty or self.keystoneLevel
+                local isReceived = not IsItemReceived(self.viewMode, diffOrTier, self.specID, self.itemID)
+                SetItemReceived(self.viewMode, diffOrTier, self.specID, self.itemID, isReceived)
 
                 local itemName = C_Item.GetItemInfo(self.itemID) or "Loading..."
                 local slotName = GetSlotName(self.itemID)
@@ -1344,7 +1383,8 @@ local function CreateOrReuseItemFrame(pool, index, parent)
             local link = self.itemLink or BuildItemLink(self.itemID, self.bonusId)
             GameTooltip:SetHyperlink(link)
             if isBonusRollMode then
-                local isRec = IsItemReceived(self.viewMode, self.raidDifficulty, self.specID, self.itemID)
+                local diffOrTier = (self.viewMode == "raid") and self.raidDifficulty or self.keystoneLevel
+                local isRec = IsItemReceived(self.viewMode, diffOrTier, self.specID, self.itemID)
                 GameTooltip:AddLine(" ")
                 if isRec then
                     GameTooltip:AddLine("|cff777777Status: OBTAINED / RECEIVED|r")
@@ -1382,13 +1422,15 @@ local function AddItemToPool(pool, parent, index, itemID, bonusId, itemLink, sin
     itemFrame.trackLabel = trackLabel
     itemFrame.viewMode = viewMode
     itemFrame.raidDifficulty = selectedRaidDifficulty
+    itemFrame.keystoneLevel = selectedKeystoneLevel
 
     local itemName = C_Item.GetItemInfo(itemID)
     local itemData = GetItemData(itemID)
     local dbIcon = (itemData and itemData.icon) or C_Item.GetItemIconByID(itemID)
     local slotName = GetSlotName(itemID)
 
-    local isReceived = IsItemReceived(viewMode, selectedRaidDifficulty, specID, itemID)
+    local diffOrTier = (viewMode == "raid") and selectedRaidDifficulty or selectedKeystoneLevel
+    local isReceived = IsItemReceived(viewMode, diffOrTier, specID, itemID)
 
     if isBonusRollMode then
         local labelStr = trackLabel and ("|cff55ff55" .. trackLabel .. "|r") or ""
