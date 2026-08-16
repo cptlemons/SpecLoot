@@ -11,6 +11,7 @@ Useful for picking which loot spec to set before pushing a key or pulling a boss
 * **Side-by-Side Comparison:** View loot for all specs of a class simultaneously.
 * **Shared Loot Panel:** Quickly identify items that drop for *every* spec (e.g., necks, rings, cloaks).
 * **Bonus Rolls & Great Vault Tracking:** Check the "Bonus Rolls" mode toggle to view scaled Great Vault item levels and upgrade track badges (e.g., `1/6 Myth`, `4/6 Myth`, `6/6 Myth`). Right-click any item in this mode to mark it as received (applying a strikethrough line and dimming the icon), removing it from your active loot pool per-spec.
+* **Automated Bonus Roll Detection:** Automatically captures bonus roll rewards (`BONUS_ROLL_RESULT`), detects the active dungeon/keystone level (requiring M+ level +10 or higher) or raid boss encounter, attributes the item to your effective loot specialization, marks it as received, and prints a confirmation to chat.
 * **Smart Highlighting:** Hover over an item to see it light up in every spec panel where it appears.
 * **Difficulty-Aware Tooltips & Upgrade Tracks:** Real-time item level previews and upgrade tracks based on Keystone level (+2 to +10) or Raid difficulty (LFR through Mythic).
 * **Tier Token & Omni-Curio Support:** Accurately classifies class tier tokens and omni-curios for applicable specs while filtering out cosmetic transmogs, mounts, pets, and non-equipment clutter.
@@ -27,6 +28,7 @@ Useful for picking which loot spec to set before pushing a key or pulling a boss
 | :--- | :--- |
 | `/sl` or `/specloot` | Toggle the main interface |
 | `/sl clear` or `/sl reset` | Reset all marked bonus roll items for the current character |
+| `/sl testroll <id>` | Simulate receiving a bonus roll item |
 | `/sl status` | Check the health of your local loot cache |
 | `/sl rescan` | Force a fresh scrape of the Encounter Journal |
 | `/sl debug` | Re-scrape with per-encounter verbose debug output |
