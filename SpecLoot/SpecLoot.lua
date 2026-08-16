@@ -91,6 +91,7 @@ end
 local HandleBonusRollResult
 local HandleTestKill
 local HandleTestKey
+local ListReceivedBonusRolls
 
 SLASH_SPECLOOT1 = "/specloot"
 SLASH_SPECLOOT2 = "/sl"
@@ -102,6 +103,10 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "debug" then
         addonTable.Scraper:Scrape(true)
         addonTable.Scraper:EnsureClassClassified(selectedClassID)
+    elseif msg == "list" or msg == "rolls" or msg == "listrolls" or msg == "history" then
+        if ListReceivedBonusRolls then
+            ListReceivedBonusRolls()
+        end
     elseif msg == "clear" or msg == "reset" or msg == "clearrolls" or msg == "resetrolls" then
         InitCharDB()
         SpecLootCharDB.receivedItems = {}
@@ -151,6 +156,7 @@ SlashCmdList["SPECLOOT"] = function(msg)
     elseif msg == "help" or msg == "?" then
         print("|cffa335eeSpecLoot|r commands:")
         print("  /sl                  toggle the main window")
+        print("  /sl list             list all marked bonus rolls for this character")
         print("  /sl clear            reset marked bonus rolls for this character")
         print("  /sl testroll <id>    simulate receiving a bonus roll item")
         print("  /sl testkill <boss>  simulate a raid boss kill (e.g. /sl testkill 2849)")
@@ -423,6 +429,113 @@ local function BuildItemHyperlink(itemID, bonusId)
     local _, _, itemQuality = C_Item.GetItemInfoInstant(itemID)
     local hexColor = (itemQuality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[itemQuality] and ITEM_QUALITY_COLORS[itemQuality].hex) or "|cffa335ee"
     return hexColor .. "|H" .. rawString .. "|h[" .. itemName .. "]|h|r"
+end
+
+ListReceivedBonusRolls = function()
+    InitCharDB()
+    if not SpecLootCharDB or not SpecLootCharDB.receivedItems or not next(SpecLootCharDB.receivedItems) then
+        print("|cffa335eeSpecLoot|r: No bonus roll items marked as received for this character.")
+        return
+    end
+
+    local entries = {}
+    for key, isRec in pairs(SpecLootCharDB.receivedItems) do
+        if isRec then
+            local raidDiff, specID, itemID
+            local vMode = "dungeon"
+
+            if key:match("^raid:") then
+                vMode = "raid"
+                local d, s, i = key:match("^raid:(%d+):(%d+):(%d+)")
+                raidDiff = tonumber(d)
+                specID = tonumber(s)
+                itemID = tonumber(i)
+            elseif key:match("^dungeon:") then
+                local s, i = key:match("^dungeon:(%d+):(%d+)")
+                specID = tonumber(s)
+                itemID = tonumber(i)
+            else
+                local s, i = key:match("^(%d+):(%d+)")
+                specID = tonumber(s)
+                itemID = tonumber(i)
+            end
+
+            if itemID then
+                local sourceName = "Unknown Source"
+                local difficultyText = "Mythic+ (10+)"
+                local scaledBonusId = nil
+
+                if vMode == "raid" then
+                    local bossName = "Raid Boss"
+                    local raidName = "Raid"
+                    local encID = nil
+                    if raids then
+                        for _, r in ipairs(raids) do
+                            for _, enc in ipairs(r.encounters or {}) do
+                                for _, id in ipairs(enc.items or {}) do
+                                    if id == itemID then
+                                        bossName = enc.name
+                                        raidName = r.name
+                                        encID = enc.id
+                                        break
+                                    end
+                                end
+                                if encID then break end
+                            end
+                            if encID then break end
+                        end
+                    end
+                    sourceName = string.format("%s in %s", bossName, raidName)
+                    local diffInfo = GetRaidDifficultyInfo(raidDiff or 15)
+                    difficultyText = diffInfo and diffInfo.name or "Heroic"
+                    local _, bId = GetBonusRollTrackInfo("raid", 10, raidDiff or 15, encID)
+                    scaledBonusId = bId
+                else
+                    local dungeonName = nil
+                    if dungeons then
+                        for _, d in ipairs(dungeons) do
+                            for _, id in ipairs(d.lootTable or {}) do
+                                if id == itemID then
+                                    dungeonName = d.name
+                                    break
+                                end
+                            end
+                            if dungeonName then break end
+                        end
+                    end
+                    sourceName = dungeonName or "Mythic+ Dungeon"
+                    difficultyText = "Mythic+ (10+)"
+                    local _, bId = GetBonusRollTrackInfo("dungeon", 10)
+                    scaledBonusId = bId
+                end
+
+                local specName = "All Specs"
+                if specID and specID > 0 then
+                    local _, sName = GetSpecializationInfoByID(specID)
+                    specName = sName or tostring(specID)
+                end
+
+                local itemLink = BuildItemHyperlink(itemID, scaledBonusId)
+                entries[#entries + 1] = {
+                    itemLink = itemLink,
+                    sourceName = sourceName,
+                    difficultyText = difficultyText,
+                    specName = specName,
+                }
+            end
+        end
+    end
+
+    if #entries == 0 then
+        print("|cffa335eeSpecLoot|r: No bonus roll items marked as received for this character.")
+        return
+    end
+
+    print(string.format("|cffa335eeSpecLoot|r: Marked Bonus Roll Items for %s (%d):", UnitName("player") or "Character", #entries))
+    for idx, e in ipairs(entries) do
+        print(string.format("  |cffaaaaaa%d.|r %s from |cffffffff%s|r on |cff55ff55%s|r (Loot Spec: |cffffd100%s|r)",
+            idx, e.itemLink, e.sourceName, e.difficultyText, e.specName))
+    end
 end
 
 -----------------------------------------
