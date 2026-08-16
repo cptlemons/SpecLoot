@@ -54,8 +54,10 @@ local function InitCharDB()
     SpecLootCharDB.receivedItems = SpecLootCharDB.receivedItems or {}
 end
 
--- Forward declaration for test commands
+-- Forward declarations for test commands
 local HandleBonusRollResult
+local HandleTestKill
+local HandleTestKey
 
 SLASH_SPECLOOT1 = "/specloot"
 SLASH_SPECLOOT2 = "/sl"
@@ -74,15 +76,31 @@ SlashCmdList["SPECLOOT"] = function(msg)
             UpdateLootDisplay()
         end
         print("|cffa335eeSpecLoot|r: Cleared all marked bonus roll items for this character.")
+    elseif msg:match("^testkey") or msg:match("^simkey") then
+        local args = {}
+        for w in msg:gmatch("%S+") do table.insert(args, w) end
+        local keyLvl = tonumber(args[2]) or 10
+        if HandleTestKey then
+            HandleTestKey(keyLvl)
+        end
+    elseif msg:match("^testkill") or msg:match("^simkill") then
+        local args = {}
+        for w in msg:gmatch("%S+") do table.insert(args, w) end
+        local bossID = tonumber(args[2]) or 2849
+        local diffID = tonumber(args[3]) or 15
+        if HandleTestKill then
+            HandleTestKill(bossID, diffID)
+        end
     elseif msg:match("^testroll") or msg:match("^simroll") then
         local args = {}
         for w in msg:gmatch("%S+") do table.insert(args, w) end
         local testItemID = tonumber(args[2])
+        local testSpecID = tonumber(args[3]) or 0
         if testItemID and HandleBonusRollResult then
             local link = select(2, C_Item.GetItemInfo(testItemID)) or ("|cffa335ee|Hitem:" .. testItemID .. ":0:0:0:0:0:0:0:0|h[" .. testItemID .. "]|h|r")
-            HandleBonusRollResult("item", link, 1, 0)
+            HandleBonusRollResult("item", link, 1, testSpecID)
         else
-            print("|cffa335eeSpecLoot|r usage: /sl testroll <itemID>")
+            print("|cffa335eeSpecLoot|r usage: /sl testroll <itemID> [specID]")
         end
     elseif msg:match("^probe") then
         local args = {}
@@ -102,6 +120,8 @@ SlashCmdList["SPECLOOT"] = function(msg)
         print("  /sl                  toggle the main window")
         print("  /sl clear            reset marked bonus rolls for this character")
         print("  /sl testroll <id>    simulate receiving a bonus roll item")
+        print("  /sl testkill <boss>  simulate a raid boss kill (e.g. /sl testkill 2849)")
+        print("  /sl testkey <lvl>    simulate an active keystone level (e.g. /sl testkey 10)")
         print("  /sl rescan           force a fresh scrape (quiet)")
         print("  /sl debug            re-scrape with per-encounter verbose output")
         print("  /sl probe <i> <e>    try every difficulty ID against one (instance, encounter)")
@@ -318,6 +338,36 @@ local function GetEffectiveLootSpecID(eventSpecID)
         end
     end
     return 0
+end
+
+HandleTestKey = function(keyLevel)
+    cachedKeyLevel = keyLevel
+    InitCharDB()
+    SpecLootCharDB.cachedKeyLevel = keyLevel
+    print(string.format("|cffa335eeSpecLoot|r: Simulated active keystone level +%d.", keyLevel))
+end
+
+HandleTestKill = function(bossEncID, diffID)
+    lastKilledBossEncID = bossEncID
+    cachedRaidDifficultyID = diffID or 15
+    local bossName = "Unknown Boss"
+    local raidName = "Raid"
+    if raids then
+        for _, r in ipairs(raids) do
+            for _, enc in ipairs(r.encounters or {}) do
+                if enc.id == bossEncID then
+                    bossName = enc.name
+                    raidName = r.name
+                    break
+                end
+            end
+        end
+    end
+    lastKilledBossName = bossName
+    cachedRaidName = raidName
+    local diffInfo = GetRaidDifficultyInfo(cachedRaidDifficultyID)
+    local diffName = diffInfo and diffInfo.name or tostring(cachedRaidDifficultyID)
+    print(string.format("|cffa335eeSpecLoot|r: Simulated boss kill: %s in %s (%s).", bossName, raidName, diffName))
 end
 
 HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
