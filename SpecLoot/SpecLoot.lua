@@ -54,6 +54,39 @@ local function InitCharDB()
     SpecLootCharDB.receivedItems = SpecLootCharDB.receivedItems or {}
 end
 
+local function GetReceivedItemKey(vMode, raidDiff, specID, itemID)
+    if vMode == "raid" then
+        local diff = raidDiff or selectedRaidDifficulty or 15
+        return "raid:" .. diff .. ":" .. (specID or 0) .. ":" .. itemID
+    else
+        return "dungeon:" .. (specID or 0) .. ":" .. itemID
+    end
+end
+
+local function IsItemReceived(vMode, raidDiff, specID, itemID)
+    if not SpecLootCharDB or not SpecLootCharDB.receivedItems then
+        return false
+    end
+    local key = GetReceivedItemKey(vMode, raidDiff, specID, itemID)
+    if SpecLootCharDB.receivedItems[key] then
+        return true
+    end
+    -- Fallback for legacy key format (for dungeons)
+    if vMode ~= "raid" and SpecLootCharDB.receivedItems[(specID or 0) .. ":" .. itemID] then
+        return true
+    end
+    return false
+end
+
+local function SetItemReceived(vMode, raidDiff, specID, itemID, isReceived)
+    InitCharDB()
+    local key = GetReceivedItemKey(vMode, raidDiff, specID, itemID)
+    SpecLootCharDB.receivedItems[key] = isReceived and true or nil
+    if not isReceived and vMode ~= "raid" then
+        SpecLootCharDB.receivedItems[(specID or 0) .. ":" .. itemID] = nil
+    end
+end
+
 -- Forward declarations for test commands
 local HandleBonusRollResult
 local HandleTestKill
@@ -583,17 +616,17 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
 
     if shouldTrack and sourceName and difficultyText then
         local function executeTrack()
-            InitCharDB()
-            local key = (effectiveSpecID or 0) .. ":" .. itemID
-            local alreadyReceived = SpecLootCharDB.receivedItems and SpecLootCharDB.receivedItems[key]
+            local vMode = (isInsideRaid or (raidMatch and not isInsideParty)) and "raid" or "dungeon"
+            local diffForDB = (vMode == "raid") and ((difficultyID and difficultyID > 0 and isInsideRaid) and difficultyID or cachedRaidDifficultyID or selectedRaidDifficulty or 15) or nil
 
+            local alreadyReceived = IsItemReceived(vMode, diffForDB, effectiveSpecID, itemID)
             local displayLink = BuildItemHyperlink(itemID, scaledBonusId)
 
             if alreadyReceived then
                 print(string.format("|cffa335eeSpecLoot|r: Detected %s from %s on %s (Loot Spec: %s), but it was already marked as received.",
                     displayLink, sourceName, difficultyText, specName))
             else
-                SpecLootCharDB.receivedItems[key] = true
+                SetItemReceived(vMode, diffForDB, effectiveSpecID, itemID, true)
 
                 if mainFrame:IsShown() then
                     UpdateLootDisplay()
@@ -1178,10 +1211,8 @@ local function CreateOrReuseItemFrame(pool, index, parent)
 
         itemFrame:SetScript("OnClick", function(self, button)
             if button == "RightButton" and isBonusRollMode then
-                InitCharDB()
-                local key = (self.specID or 0) .. ":" .. self.itemID
-                local isReceived = not SpecLootCharDB.receivedItems[key]
-                SpecLootCharDB.receivedItems[key] = isReceived and true or nil
+                local isReceived = not IsItemReceived(self.viewMode, self.raidDifficulty, self.specID, self.itemID)
+                SetItemReceived(self.viewMode, self.raidDifficulty, self.specID, self.itemID, isReceived)
 
                 local itemName = C_Item.GetItemInfo(self.itemID) or "Loading..."
                 local slotName = GetSlotName(self.itemID)
@@ -1200,9 +1231,7 @@ local function CreateOrReuseItemFrame(pool, index, parent)
             local link = self.itemLink or BuildItemLink(self.itemID, self.bonusId)
             GameTooltip:SetHyperlink(link)
             if isBonusRollMode then
-                InitCharDB()
-                local key = (self.specID or 0) .. ":" .. self.itemID
-                local isRec = SpecLootCharDB.receivedItems[key]
+                local isRec = IsItemReceived(self.viewMode, self.raidDifficulty, self.specID, self.itemID)
                 GameTooltip:AddLine(" ")
                 if isRec then
                     GameTooltip:AddLine("|cff777777Status: OBTAINED / RECEIVED|r")
@@ -1238,15 +1267,15 @@ local function AddItemToPool(pool, parent, index, itemID, bonusId, itemLink, sin
     itemFrame.bonusId = bonusId
     itemFrame.itemLink = itemLink
     itemFrame.trackLabel = trackLabel
+    itemFrame.viewMode = viewMode
+    itemFrame.raidDifficulty = selectedRaidDifficulty
 
     local itemName = C_Item.GetItemInfo(itemID)
     local itemData = GetItemData(itemID)
     local dbIcon = (itemData and itemData.icon) or C_Item.GetItemIconByID(itemID)
     local slotName = GetSlotName(itemID)
 
-    InitCharDB()
-    local key = (specID or 0) .. ":" .. itemID
-    local isReceived = SpecLootCharDB.receivedItems and SpecLootCharDB.receivedItems[key]
+    local isReceived = IsItemReceived(viewMode, selectedRaidDifficulty, specID, itemID)
 
     if isBonusRollMode then
         local labelStr = trackLabel and ("|cff55ff55" .. trackLabel .. "|r") or ""
