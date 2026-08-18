@@ -12,7 +12,7 @@ local selectedClassID = select(3, UnitClass("player"))
 
 -- Main Frame
 local mainFrame = CreateFrame("Frame", "SpecLootMainFrame", UIParent, "BasicFrameTemplateWithInset")
-mainFrame:SetSize(800, 630)
+mainFrame:SetSize(840, 600)
 mainFrame:SetPoint("CENTER")
 mainFrame:SetMovable(true)
 mainFrame:EnableMouse(true)
@@ -364,6 +364,54 @@ local function GetBonusRollTrackInfo(vMode, keystoneLevel, raidDifficulty, bossE
             end
         end
 
+        return ilvl, bonusId, trackLabel
+    end
+end
+
+local function GetNormalLootTrackInfo(vMode, keystoneLevel, raidDifficulty, bossEncID)
+    if vMode == "dungeon" then
+        local ilvl, bonusId, track, rank = GetEndOfRunInfo(keystoneLevel)
+        local trackData = addonTable.UpgradeTracks and addonTable.UpgradeTracks[track]
+        local maxRank = trackData and #trackData or 6
+        local shortTrack = track:sub(1, 1):upper() .. track:sub(2)
+        local trackLabel = rank .. "/" .. maxRank .. " " .. shortTrack
+        return ilvl, bonusId, trackLabel
+    else
+        local bossIndex = 1
+        if bossEncID and addonTable.RaidDatabase then
+            for _, raid in ipairs(addonTable.RaidDatabase) do
+                for idx, enc in ipairs(raid.encounters or {}) do
+                    if enc.id == bossEncID then
+                        bossIndex = enc.index or idx
+                        break
+                    end
+                end
+            end
+        end
+        local bossRank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
+
+        local ilvl, bonusId, trackLabel
+        if raidDifficulty == 17 then
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["lfr"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 279
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12825
+            trackLabel = bossRank .. "/8 Vet"
+        elseif raidDifficulty == 14 then
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["normal"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 292
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12833
+            trackLabel = bossRank .. "/8 Champ"
+        elseif raidDifficulty == 15 then
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["heroic"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 305
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12841
+            trackLabel = bossRank .. "/6 Hero"
+        else
+            local trackData = addonTable.RaidTracks and addonTable.RaidTracks["mythic"]
+            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 318
+            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12849
+            trackLabel = bossRank .. "/6 Myth"
+        end
         return ilvl, bonusId, trackLabel
     end
 end
@@ -1240,19 +1288,38 @@ addonTable.OnScrapeComplete = function()
 end
 
 -----------------------------------------
--- SHARED LOOT FRAME
+-- SHARED LOOT FRAME & BONUS ROLL BANNER
 -----------------------------------------
 
-local sharedFrame = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
-sharedFrame:SetSize(780, 150)
-sharedFrame:SetPoint("TOP", mainFrame, "TOP", 0, dungeonRowY - iconSize - 6)
-sharedFrame.bg = sharedFrame:CreateTexture(nil, "BACKGROUND")
-sharedFrame.bg:SetAllPoints()
-sharedFrame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.5)
+local SLOT_ORDER = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 20, 99 }
+local currentLootTable = {}
 
-local sharedTitle = sharedFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-sharedTitle:SetPoint("TOP", 0, -5)
-sharedTitle:SetText("Shared Loot")
+local bonusRollBanner = CreateFrame("Frame", "SpecLootBonusRollBanner", mainFrame, "BackdropTemplate")
+bonusRollBanner:SetSize(816, 24)
+bonusRollBanner:SetPoint("TOP", mainFrame, "TOP", 0, dungeonRowY - iconSize - 8)
+bonusRollBanner.bg = bonusRollBanner:CreateTexture(nil, "BACKGROUND")
+bonusRollBanner.bg:SetAllPoints()
+bonusRollBanner.bg:SetColorTexture(0.08, 0.08, 0.08, 0.8)
+
+bonusRollBanner.borderTop = bonusRollBanner:CreateTexture(nil, "ARTWORK")
+bonusRollBanner.borderTop:SetHeight(1)
+bonusRollBanner.borderTop:SetPoint("TOPLEFT", 0, 0)
+bonusRollBanner.borderTop:SetPoint("TOPRIGHT", 0, 0)
+bonusRollBanner.borderTop:SetColorTexture(1, 0.82, 0, 0.35)
+
+bonusRollBanner.borderBottom = bonusRollBanner:CreateTexture(nil, "ARTWORK")
+bonusRollBanner.borderBottom:SetHeight(1)
+bonusRollBanner.borderBottom:SetPoint("BOTTOMLEFT", 0, 0)
+bonusRollBanner.borderBottom:SetPoint("BOTTOMRIGHT", 0, 0)
+bonusRollBanner.borderBottom:SetColorTexture(1, 0.82, 0, 0.35)
+
+bonusRollBanner.text = bonusRollBanner:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+bonusRollBanner.text:SetPoint("CENTER", 0, 0)
+bonusRollBanner:Hide()
+
+local sharedFrame = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
+sharedFrame:SetSize(816, 0)
+sharedFrame:Hide()
 
 -----------------------------------------
 -- SPEC FRAMES (bottom section, up to 4)
@@ -1260,6 +1327,7 @@ sharedTitle:SetText("Shared Loot")
 
 local specFrames = {}
 local specDisplayFrames = {}
+local specHeaderFrames = {}
 local MAX_SPECS = 4
 
 local specBgColors = {
@@ -1271,23 +1339,39 @@ local specBgColors = {
 
 for i = 1, MAX_SPECS do
     local f = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
-    f:SetSize(256, 230)
+    f:SetSize(200, 230)
     f.bg = f:CreateTexture(nil, "BACKGROUND")
     f.bg:SetAllPoints()
     local c = specBgColors[i]
     f.bg:SetColorTexture(c[1], c[2], c[3], c[4])
 
-    -- Spec icon and title at BOTTOM, centered, 30x30
+    -- Spec icon and title at BOTTOM, centered, 28x28
     f.specIcon = f:CreateTexture(nil, "OVERLAY")
-    f.specIcon:SetSize(30, 30)
-    f.specIcon:SetPoint("BOTTOM", f, "BOTTOM", -40, 8)
+    f.specIcon:SetSize(28, 28)
+    f.specIcon:SetPoint("BOTTOM", f, "BOTTOM", -36, 8)
 
-    f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.title:SetPoint("LEFT", f.specIcon, "RIGHT", 6, 0)
+
+    if i == 1 then
+        f.extraIcons = {}
+        for extraIdx = 2, 3 do
+            local icon = f:CreateTexture(nil, "OVERLAY")
+            icon:SetSize(24, 24)
+            if extraIdx == 2 then
+                icon:SetPoint("LEFT", f.specIcon, "RIGHT", 4, 0)
+            else
+                icon:SetPoint("LEFT", f.extraIcons[2], "RIGHT", 4, 0)
+            end
+            icon:Hide()
+            f.extraIcons[extraIdx] = icon
+        end
+    end
 
     f:Hide()
     specFrames[i] = f
     specDisplayFrames[i] = {}
+    specHeaderFrames[i] = {}
 end
 
 -----------------------------------------
@@ -1300,14 +1384,71 @@ local function ClearAllDisplayFrames()
     for _, f in ipairs(sharedDisplayFrames) do
         f:Hide()
         if f.strikeLine then f.strikeLine:Hide() end
+        if f.exclusiveHighlight then f.exclusiveHighlight:Hide() end
+        if f.exclusiveBar then f.exclusiveBar:Hide() end
     end
     for si = 1, MAX_SPECS do
         for _, f in ipairs(specDisplayFrames[si]) do
             f:Hide()
             if f.strikeLine then f.strikeLine:Hide() end
+            if f.exclusiveHighlight then f.exclusiveHighlight:Hide() end
+            if f.exclusiveBar then f.exclusiveBar:Hide() end
+        end
+        for _, f in ipairs(specHeaderFrames[si]) do
+            f:Hide()
         end
     end
     ClearRegistry()
+end
+
+local function IsItemExclusiveToSpec(itemID, classID, specs)
+    local count = 0
+    for _, spec in ipairs(specs) do
+        if DoesItemDropForSpec(itemID, classID, spec.id) then
+            count = count + 1
+        end
+    end
+    return (count == 1)
+end
+
+local function UpdateSpecFooterCounts()
+    local classID = selectedClassID
+    local specs = GetClassSpecs(classID)
+    local numSpecs = #specs
+    if numSpecs == 0 then return end
+
+    local isUnified = (not isBonusRollMode) and (classID == 8 or classID == 9)
+    local diffOrTier = (viewMode == "raid") and selectedRaidDifficulty or selectedKeystoneLevel
+
+    if isUnified then
+        local totalCount = 0
+        for _, itemID in ipairs(currentLootTable or {}) do
+            if IsItemAllowed(itemID) and DoesItemDropForSpec(itemID, classID, specs[1].id) then
+                totalCount = totalCount + 1
+            end
+        end
+        specFrames[1].title:SetText(string.format("All Specializations (%d)", totalCount))
+    else
+        for si = 1, numSpecs do
+            local spec = specs[si]
+            local totalCount = 0
+            local receivedCount = 0
+            for _, itemID in ipairs(currentLootTable or {}) do
+                if IsItemAllowed(itemID) and DoesItemDropForSpec(itemID, classID, spec.id) then
+                    totalCount = totalCount + 1
+                    if IsItemReceived(viewMode, diffOrTier, spec.id, itemID) then
+                        receivedCount = receivedCount + 1
+                    end
+                end
+            end
+            if isBonusRollMode then
+                local remaining = totalCount - receivedCount
+                specFrames[si].title:SetText(string.format("%s (%d)", spec.name, remaining))
+            else
+                specFrames[si].title:SetText(string.format("%s (%d)", spec.name, totalCount))
+            end
+        end
+    end
 end
 
 local function UpdateItemReceivedVisuals(itemFrame, isReceived)
@@ -1318,8 +1459,13 @@ local function UpdateItemReceivedVisuals(itemFrame, isReceived)
         itemFrame.text:SetAlpha(0.40)
         if itemFrame.strikeLine then
             local textWidth = itemFrame.text:GetStringWidth() or 100
-            itemFrame.strikeLine:SetWidth(math.min(textWidth + 4, 215))
+            local maxStrike = (itemFrame:GetWidth() > 22 and itemFrame:GetWidth() - 22) or 200
+            itemFrame.strikeLine:SetWidth(math.min(textWidth + 4, maxStrike))
             itemFrame.strikeLine:Show()
+        end
+        if itemFrame.isExclusive then
+            if itemFrame.exclusiveHighlight then itemFrame.exclusiveHighlight:SetAlpha(0.35) end
+            if itemFrame.exclusiveBar then itemFrame.exclusiveBar:SetAlpha(0.35) end
         end
     else
         itemFrame.icon:SetDesaturated(false)
@@ -1328,23 +1474,194 @@ local function UpdateItemReceivedVisuals(itemFrame, isReceived)
         if itemFrame.strikeLine then
             itemFrame.strikeLine:Hide()
         end
+        if itemFrame.isExclusive then
+            if itemFrame.exclusiveHighlight then itemFrame.exclusiveHighlight:SetAlpha(1.0) end
+            if itemFrame.exclusiveBar then itemFrame.exclusiveBar:SetAlpha(1.0) end
+        end
     end
+end
+
+local function CreateOrReuseHeaderFrame(pool, index, parent)
+    local headerFrame = pool[index]
+    if not headerFrame then
+        headerFrame = CreateFrame("Frame", nil, parent)
+        headerFrame:SetHeight(18)
+
+        headerFrame.text = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        headerFrame.text:SetPoint("LEFT", headerFrame, "LEFT", 2, 0)
+        headerFrame.text:SetJustifyH("LEFT")
+
+        headerFrame.line = headerFrame:CreateTexture(nil, "ARTWORK")
+        headerFrame.line:SetHeight(1)
+        headerFrame.line:SetPoint("LEFT", headerFrame.text, "RIGHT", 6, 0)
+        headerFrame.line:SetPoint("RIGHT", headerFrame, "RIGHT", -2, 0)
+        headerFrame.line:SetColorTexture(1, 0.82, 0, 0.25)
+
+        pool[index] = headerFrame
+    end
+
+    if headerFrame:GetParent() ~= parent then
+        headerFrame:SetParent(parent)
+    end
+
+    return headerFrame
+end
+
+local STAT_NAMES = {
+    [0] = "Crit",
+    [1] = "Haste",
+    [2] = "Mast",
+    [3] = "Vers",
+}
+
+local STAT_PRIORITY = {
+    ["Crit"] = 1,
+    ["Haste"] = 2,
+    ["Vers"] = 3,
+    ["Mast"] = 4,
+}
+
+local SPEC_PRIMARY_STAT = {
+    -- Strength
+    [71] = "Str", [72] = "Str", [73] = "Str",
+    [66] = "Str", [70] = "Str",
+    [250] = "Str", [251] = "Str", [252] = "Str",
+    -- Agility
+    [253] = "Agi", [254] = "Agi", [255] = "Agi",
+    [259] = "Agi", [260] = "Agi", [261] = "Agi",
+    [263] = "Agi",
+    [268] = "Agi", [269] = "Agi",
+    [103] = "Agi", [104] = "Agi",
+    [577] = "Agi", [581] = "Agi",
+    -- Intellect
+    [65] = "Int",
+    [256] = "Int", [257] = "Int", [258] = "Int",
+    [262] = "Int", [264] = "Int",
+    [62] = "Int", [63] = "Int", [64] = "Int",
+    [265] = "Int", [266] = "Int", [267] = "Int",
+    [270] = "Int",
+    [102] = "Int", [105] = "Int",
+    [1467] = "Int", [1468] = "Int", [1473] = "Int",
+    [1480] = "Int",
+}
+
+local function GetItemStatString(itemID)
+    local itemData = GetItemData(itemID)
+    local dbItem = addonTable.ItemDatabase and addonTable.ItemDatabase[itemID]
+    local slotId = (itemData and itemData.slotId) or (dbItem and dbItem.slotId) or GetSlotId(itemID)
+
+    -- Trinkets, tokens, curios do not display stats
+    if slotId == 13 or slotId == 14 or slotId == 20 or slotId == 99 then
+        return ""
+    end
+
+    local rawStats = (dbItem and dbItem.stats) or (itemData and itemData.stats)
+    local secondaries = {}
+
+    if rawStats and #rawStats > 0 then
+        for _, s in ipairs(rawStats) do
+            local name = STAT_NAMES[s]
+            if name then
+                table.insert(secondaries, name)
+            end
+        end
+    end
+
+    -- If no raw stats found in database, try C_Item.GetItemStats if available
+    if #secondaries == 0 then
+        local link = select(2, C_Item.GetItemInfo(itemID)) or ("item:" .. itemID)
+        local statsTable = C_Item.GetItemStats(link)
+        if statsTable then
+            if statsTable["ITEM_MOD_CRIT_RATING_SHORT"] or statsTable["ITEM_MOD_CRIT_RATING"] then
+                table.insert(secondaries, "Crit")
+            end
+            if statsTable["ITEM_MOD_HASTE_RATING_SHORT"] or statsTable["ITEM_MOD_HASTE_RATING"] then
+                table.insert(secondaries, "Haste")
+            end
+            if statsTable["ITEM_MOD_VERSATILITY"] or statsTable["ITEM_MOD_VERSATILITY_RATING"] then
+                table.insert(secondaries, "Vers")
+            end
+            if statsTable["ITEM_MOD_MASTERY_RATING_SHORT"] or statsTable["ITEM_MOD_MASTERY_RATING"] then
+                table.insert(secondaries, "Mast")
+            end
+        end
+    end
+
+    -- Sort secondaries by priority: Crit > Haste > Vers > Mast
+    table.sort(secondaries, function(a, b)
+        return (STAT_PRIORITY[a] or 99) < (STAT_PRIORITY[b] or 99)
+    end)
+
+    local secString = table.concat(secondaries, "/")
+
+    -- Check for Cantrip effect
+    local hasCantrip = false
+    if rawStats and #rawStats == 1 then
+        hasCantrip = true
+    else
+        local spellName = C_Item.GetItemSpell(itemID)
+        if spellName and spellName ~= "" then
+            hasCantrip = true
+        end
+    end
+
+    -- Primary stats for weapons & off-hands (slot 10, 11)
+    local isWeapon = (slotId == 10 or slotId == 11)
+    local primString = ""
+
+    if isWeapon then
+        local classes = (dbItem and dbItem.classes) or (itemData and itemData.classes)
+        local hasStr, hasAgi, hasInt = false, false, false
+        if classes then
+            for _, specList in pairs(classes) do
+                for _, specID in ipairs(specList) do
+                    local prim = SPEC_PRIMARY_STAT[specID]
+                    if prim == "Str" then hasStr = true
+                    elseif prim == "Agi" then hasAgi = true
+                    elseif prim == "Int" then hasInt = true end
+                end
+            end
+        end
+
+        local primaries = {}
+        if hasStr then table.insert(primaries, "Str") end
+        if hasAgi then table.insert(primaries, "Agi") end
+        if hasInt then table.insert(primaries, "Int") end
+
+        if #primaries > 0 then
+            primString = table.concat(primaries, "/")
+        end
+    end
+
+    -- Build final stat tag
+    local parts = {}
+    if primString ~= "" then
+        table.insert(parts, primString)
+    end
+    if secString ~= "" then
+        table.insert(parts, secString)
+    end
+    if hasCantrip then
+        table.insert(parts, "Cantrip")
+    end
+
+    return table.concat(parts, " ")
 end
 
 local function CreateOrReuseItemFrame(pool, index, parent)
     local itemFrame = pool[index]
     if not itemFrame then
         itemFrame = CreateFrame("Button", nil, parent)
-        itemFrame:SetSize(240, 20)
+        itemFrame:SetSize(200, 20)
         itemFrame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
         itemFrame.icon = itemFrame:CreateTexture(nil, "ARTWORK")
         itemFrame.icon:SetSize(18, 18)
-        itemFrame.icon:SetPoint("LEFT")
+        itemFrame.icon:SetPoint("LEFT", 0, 0)
 
         itemFrame.text = itemFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         itemFrame.text:SetPoint("LEFT", itemFrame.icon, "RIGHT", 4, 0)
-        itemFrame.text:SetWidth(215)
+        itemFrame.text:SetWidth(170)
         itemFrame.text:SetWordWrap(false)
         itemFrame.text:SetJustifyH("LEFT")
 
@@ -1360,6 +1677,18 @@ local function CreateOrReuseItemFrame(pool, index, parent)
         itemFrame.dupHighlight:SetColorTexture(1, 1, 1, 0.15)
         itemFrame.dupHighlight:Hide()
 
+        itemFrame.exclusiveHighlight = itemFrame:CreateTexture(nil, "BACKGROUND", nil, -1)
+        itemFrame.exclusiveHighlight:SetPoint("TOPLEFT", -2, 1)
+        itemFrame.exclusiveHighlight:SetPoint("BOTTOMRIGHT", 2, -1)
+        itemFrame.exclusiveHighlight:SetColorTexture(1, 0.82, 0, 0.14)
+        itemFrame.exclusiveHighlight:Hide()
+
+        itemFrame.exclusiveBar = itemFrame:CreateTexture(nil, "ARTWORK", nil, 6)
+        itemFrame.exclusiveBar:SetSize(2, 16)
+        itemFrame.exclusiveBar:SetPoint("LEFT", itemFrame, "LEFT", -2, 0)
+        itemFrame.exclusiveBar:SetColorTexture(1, 0.82, 0, 0.90)
+        itemFrame.exclusiveBar:Hide()
+
         itemFrame:SetScript("OnClick", function(self, button)
             if button == "RightButton" and isBonusRollMode then
                 local diffOrTier = (self.viewMode == "raid") and self.raidDifficulty or self.keystoneLevel
@@ -1367,14 +1696,15 @@ local function CreateOrReuseItemFrame(pool, index, parent)
                 SetItemReceived(self.viewMode, diffOrTier, self.specID, self.itemID, isReceived)
 
                 local itemName = C_Item.GetItemInfo(self.itemID) or "Loading..."
-                local slotName = GetSlotName(self.itemID)
-                local labelStr = self.trackLabel and ("|cff55ff55" .. self.trackLabel .. "|r") or ""
+                local statText = GetItemStatString(self.itemID)
+                local statSuffix = (statText and statText ~= "") and (" |cff888888" .. statText .. "|r") or ""
                 if isReceived then
-                    self.text:SetText("|cff888888" .. itemName .. "|r |cff666666" .. slotName .. "|r " .. labelStr)
+                    self.text:SetText("|cff888888" .. itemName .. "|r" .. statSuffix)
                 else
-                    self.text:SetText("|cffa335ee" .. itemName .. "|r |cff888888" .. slotName .. "|r " .. labelStr)
+                    self.text:SetText("|cffa335ee" .. itemName .. "|r" .. statSuffix)
                 end
                 UpdateItemReceivedVisuals(self, isReceived)
+                UpdateSpecFooterCounts()
             end
         end)
 
@@ -1382,6 +1712,10 @@ local function CreateOrReuseItemFrame(pool, index, parent)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             local link = self.itemLink or BuildItemLink(self.itemID, self.bonusId)
             GameTooltip:SetHyperlink(link)
+            if self.isExclusive then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("|cffffd100★ Spec-Exclusive Item (Drops only for this spec)|r")
+            end
             if isBonusRollMode then
                 local diffOrTier = (self.viewMode == "raid") and self.raidDifficulty or self.keystoneLevel
                 local isRec = IsItemReceived(self.viewMode, diffOrTier, self.specID, self.itemID)
@@ -1412,76 +1746,32 @@ local function CreateOrReuseItemFrame(pool, index, parent)
     return itemFrame
 end
 
-local function AddItemToPool(pool, parent, index, itemID, bonusId, itemLink, singleColumn, itemsPerCol, trackLabel, specID)
-    local itemFrame = CreateOrReuseItemFrame(pool, index, parent)
-
-    itemFrame.itemID = itemID
-    itemFrame.specID = specID
-    itemFrame.bonusId = bonusId
-    itemFrame.itemLink = itemLink
-    itemFrame.trackLabel = trackLabel
-    itemFrame.viewMode = viewMode
-    itemFrame.raidDifficulty = selectedRaidDifficulty
-    itemFrame.keystoneLevel = selectedKeystoneLevel
-
-    local itemName = C_Item.GetItemInfo(itemID)
-    local itemData = GetItemData(itemID)
-    local dbIcon = (itemData and itemData.icon) or C_Item.GetItemIconByID(itemID)
-    local slotName = GetSlotName(itemID)
-
-    local diffOrTier = (viewMode == "raid") and selectedRaidDifficulty or selectedKeystoneLevel
-    local isReceived = IsItemReceived(viewMode, diffOrTier, specID, itemID)
-
-    if isBonusRollMode then
-        local labelStr = trackLabel and ("|cff55ff55" .. trackLabel .. "|r") or ""
-        if isReceived then
-            itemFrame.text:SetText("|cff888888" .. (itemName or "Loading...") .. "|r |cff666666" .. slotName .. "|r " .. labelStr)
-        else
-            itemFrame.text:SetText("|cffa335ee" .. (itemName or "Loading...") .. "|r |cff888888" .. slotName .. "|r " .. labelStr)
-        end
-    else
-        if itemName then
-            itemFrame.text:SetText("|cffa335ee" .. itemName .. "|r |cff888888" .. slotName .. "|r")
-        else
-            itemFrame.text:SetText("|cffa335eeLoading...|r |cff888888" .. slotName .. "|r")
-        end
-    end
-    itemFrame.icon:SetTexture(dbIcon or 134400)
-    itemFrame.dupHighlight:Hide()
-
-    UpdateItemReceivedVisuals(itemFrame, isReceived)
-
-    if singleColumn then
-        itemFrame:ClearAllPoints()
-        itemFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -10 - ((index - 1) * 22))
-    else
-        local maxRows = itemsPerCol or 5
-        local row = (index - 1) % maxRows
-        local col = math.floor((index - 1) / maxRows)
-        itemFrame:ClearAllPoints()
-        itemFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 10 + (col * 250), -30 - (row * 22))
-    end
-
-    itemFrame:Show()
-    RegisterItemFrame(itemID, itemFrame)
-end
-
 -----------------------------------------
 -- LAYOUT SPEC FRAMES
 -----------------------------------------
 
-local function LayoutSpecFrames(numSpecs)
-    local totalWidth = 780
+local function LayoutSpecFrames(numSpecs, isUnified)
+    local totalWidth = 816
     local gap = 4
-    local panelWidth
-    if numSpecs == 4 then
-        panelWidth = (totalWidth - (gap * 3)) / 4
-    else
-        panelWidth = (totalWidth - (gap * 2)) / 3
+    local specTopY = (dungeonRowY - iconSize - 8) - 24 - 6
+
+    if isUnified then
+        local f = specFrames[1]
+        f:ClearAllPoints()
+        local startX = (mainFrame:GetWidth() - totalWidth) / 2
+        f:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", startX, specTopY)
+        f:SetPoint("BOTTOMLEFT", mainFrame, "BOTTOMLEFT", startX, 8)
+        f:SetWidth(totalWidth)
+        f:Show()
+        for i = 2, MAX_SPECS do
+            specFrames[i]:Hide()
+        end
+        return
     end
 
+    local panelWidth = (totalWidth - (gap * (numSpecs - 1))) / numSpecs
     local startX = (mainFrame:GetWidth() - totalWidth) / 2
-    if startX <= 0 then startX = 10 end
+    if startX <= 0 then startX = 12 end
 
     for i = 1, MAX_SPECS do
         if i <= numSpecs then
@@ -1489,15 +1779,9 @@ local function LayoutSpecFrames(numSpecs)
             f:ClearAllPoints()
             local offsetX = (i - 1) * (panelWidth + gap)
 
-            if isBonusRollMode then
-                f:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", startX + offsetX, dungeonRowY - iconSize - 12)
-                f:SetPoint("BOTTOMLEFT", mainFrame, "BOTTOMLEFT", startX + offsetX, 8)
-                f:SetWidth(panelWidth)
-            else
-                f:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", startX + offsetX, (dungeonRowY - iconSize - 6) - sharedFrame:GetHeight() - 6)
-                f:SetPoint("BOTTOMLEFT", mainFrame, "BOTTOMLEFT", startX + offsetX, 8)
-                f:SetWidth(panelWidth)
-            end
+            f:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", startX + offsetX, specTopY)
+            f:SetPoint("BOTTOMLEFT", mainFrame, "BOTTOMLEFT", startX + offsetX, 8)
+            f:SetWidth(panelWidth)
             f:Show()
         else
             specFrames[i]:Hide()
@@ -1560,102 +1844,421 @@ function UpdateLootDisplay()
         end
     end
 
-    local sharedItems = {}
-    local specItems = {}
-    for i = 1, numSpecs do specItems[i] = {} end
-
+    currentLootTable = lootTable
     local bonusIdToUse = bonusId
-    local trackLabelToUse = nil
+    local isUnified = (not isBonusRollMode) and (classID == 8 or classID == 9)
+
+    local function linkFor(itemID, scaledBonusId)
+        if isBonusRollMode then
+            return BuildItemLink(itemID, scaledBonusId)
+        end
+        if viewMode == "raid" then
+            local d = GetItemData(itemID)
+            if d and d.links and d.links[selectedRaidDifficulty] then
+                return d.links[selectedRaidDifficulty]
+            end
+            local raidBonusId = GetRaidBonusId(selectedRaidDifficulty, currentBossEncID)
+            return BuildItemLink(itemID, raidBonusId)
+        else
+            return BuildItemLink(itemID, scaledBonusId)
+        end
+    end
 
     if isBonusRollMode then
         local _, gvBonusId, gvLabel = GetBonusRollTrackInfo(viewMode, selectedKeystoneLevel, selectedRaidDifficulty, currentBossEncID)
         bonusIdToUse = gvBonusId
-        trackLabelToUse = gvLabel
-    end
 
-    local normalSharedCount = 0
-    for _, itemID in ipairs(lootTable) do
-        if IsItemAllowed(itemID) then
-            local dropsFor = {}
-            for si, spec in ipairs(specs) do
-                if DoesItemDropForSpec(itemID, classID, spec.id) then
-                    dropsFor[#dropsFor + 1] = si
-                end
-            end
+        bonusRollBanner:Show()
+        bonusRollBanner:SetWidth(816)
+        bonusRollBanner.text:SetText(string.format("Bonus rolls give |cff55ff55%s|r loot", gvLabel or "Myth"))
 
-            if #dropsFor == numSpecs then
-                normalSharedCount = normalSharedCount + 1
-                if not isBonusRollMode then
-                    sharedItems[#sharedItems + 1] = itemID
-                end
-            end
+        sharedFrame:Hide()
+        sharedFrame:SetHeight(0)
 
-            if isBonusRollMode then
-                for _, si in ipairs(dropsFor) do
-                    specItems[si][#specItems[si] + 1] = itemID
-                end
-            else
-                if #dropsFor > 0 and #dropsFor < numSpecs then
-                    for _, si in ipairs(dropsFor) do
-                        specItems[si][#specItems[si] + 1] = itemID
+        local specItemsBySlot = {}
+        for si = 1, numSpecs do
+            specItemsBySlot[si] = {}
+        end
+
+        for _, itemID in ipairs(lootTable) do
+            if IsItemAllowed(itemID) then
+                local slotId = GetSlotId(itemID)
+                for si, spec in ipairs(specs) do
+                    if DoesItemDropForSpec(itemID, classID, spec.id) then
+                        specItemsBySlot[si][slotId] = specItemsBySlot[si][slotId] or {}
+                        table.insert(specItemsBySlot[si][slotId], itemID)
                     end
                 end
             end
         end
-    end
 
-    table.sort(sharedItems, SortBySlotId)
-    for i = 1, numSpecs do
-        table.sort(specItems[i], SortBySlotId)
-    end
+        local activeSlots = {}
+        for _, slotId in ipairs(SLOT_ORDER) do
+            local maxCount = 0
+            for si = 1, numSpecs do
+                local items = specItemsBySlot[si][slotId]
+                local count = items and #items or 0
+                if count > maxCount then maxCount = count end
+            end
+            if maxCount > 0 then
+                table.insert(activeSlots, {
+                    slotId = slotId,
+                    slotName = addonTable.SlotNames[slotId] or "Other",
+                    maxCount = maxCount
+                })
+            end
+        end
 
-    local totalShared = #sharedItems
-    local numCols = math.max(1, math.ceil(normalSharedCount / 5))
-    local sharedItemsPerCol = normalSharedCount > 0 and math.ceil(normalSharedCount / numCols) or 1
-    local dynamicHeight = math.max(150, 40 + (sharedItemsPerCol * 22))
+        local totalSlotRows = 0
+        for _, slot in ipairs(activeSlots) do
+            totalSlotRows = totalSlotRows + 1 + slot.maxCount
+        end
+        local contentHeight = 10 + (totalSlotRows * 21) + (#activeSlots * 4) + 40
+        local calculatedHeight = math.max(580, 160 + contentHeight + 12)
+        mainFrame:SetHeight(calculatedHeight)
 
-    -- Keep consistent window size across modes with 5px compensation
-    mainFrame:SetHeight(370 + dynamicHeight)
+        LayoutSpecFrames(numSpecs, false)
 
-    if isBonusRollMode or totalShared == 0 then
+        if specFrames[1].extraIcons then
+            specFrames[1].extraIcons[2]:Hide()
+            specFrames[1].extraIcons[3]:Hide()
+        end
+
+        for i, spec in ipairs(specs) do
+            specFrames[i].specIcon:SetSize(28, 28)
+            specFrames[i].specIcon:ClearAllPoints()
+            specFrames[i].specIcon:SetPoint("BOTTOM", specFrames[i], "BOTTOM", -36, 8)
+            specFrames[i].specIcon:SetTexture(spec.icon)
+            specFrames[i].title:ClearAllPoints()
+            specFrames[i].title:SetPoint("LEFT", specFrames[i].specIcon, "RIGHT", 6, 0)
+        end
+
+        local panelWidth = (816 - (4 * (numSpecs - 1))) / numSpecs
+
+        for si = 1, numSpecs do
+            local spec = specs[si]
+            local parent = specFrames[si]
+            local currentY = -10
+            local itemPoolIdx = 1
+            local headerPoolIdx = 1
+
+            for _, slot in ipairs(activeSlots) do
+                local slotId = slot.slotId
+                local items = specItemsBySlot[si][slotId] or {}
+                local hasItems = #items > 0
+
+                -- Slot Header
+                local headerFrame = CreateOrReuseHeaderFrame(specHeaderFrames[si], headerPoolIdx, parent)
+                headerFrame:ClearAllPoints()
+                headerFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 6, currentY)
+                headerFrame:SetWidth(panelWidth - 12)
+
+                if hasItems then
+                    headerFrame.text:SetText("|cffffd100" .. slot.slotName .. "|r")
+                    headerFrame.line:SetColorTexture(1, 0.82, 0, 0.25)
+                else
+                    headerFrame.text:SetText("|cff666666" .. slot.slotName .. "|r")
+                    headerFrame.line:SetColorTexture(1, 1, 1, 0.08)
+                end
+                headerFrame:Show()
+                headerPoolIdx = headerPoolIdx + 1
+                currentY = currentY - 18
+
+                -- Items under this slot
+                for rowIdx = 1, slot.maxCount do
+                    local itemID = items[rowIdx]
+                    if itemID then
+                        local itemFrame = CreateOrReuseItemFrame(specDisplayFrames[si], itemPoolIdx, parent)
+                        itemFrame:ClearAllPoints()
+                        itemFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 6, currentY)
+                        itemFrame:SetSize(panelWidth - 12, 20)
+                        itemFrame.text:SetWidth(panelWidth - 12 - 22)
+
+                        itemFrame.itemID = itemID
+                        itemFrame.specID = spec.id
+                        itemFrame.bonusId = bonusIdToUse
+                        itemFrame.itemLink = linkFor(itemID, bonusIdToUse)
+                        itemFrame.trackLabel = nil
+                        itemFrame.viewMode = viewMode
+                        itemFrame.raidDifficulty = selectedRaidDifficulty
+                        itemFrame.keystoneLevel = selectedKeystoneLevel
+
+                        local isExclusive = IsItemExclusiveToSpec(itemID, classID, specs)
+                        itemFrame.isExclusive = isExclusive
+                        if isExclusive then
+                            itemFrame.exclusiveHighlight:Show()
+                            itemFrame.exclusiveBar:Show()
+                        else
+                            itemFrame.exclusiveHighlight:Hide()
+                            itemFrame.exclusiveBar:Hide()
+                        end
+
+                        local itemName = C_Item.GetItemInfo(itemID)
+                        local itemData = GetItemData(itemID)
+                        local dbIcon = (itemData and itemData.icon) or C_Item.GetItemIconByID(itemID)
+
+                        local diffOrTier = (viewMode == "raid") and selectedRaidDifficulty or selectedKeystoneLevel
+                        local isReceived = IsItemReceived(viewMode, diffOrTier, spec.id, itemID)
+
+                        local statText = GetItemStatString(itemID)
+                        local statSuffix = (statText and statText ~= "") and (" |cff888888" .. statText .. "|r") or ""
+
+                        if isReceived then
+                            itemFrame.text:SetText("|cff888888" .. (itemName or "Loading...") .. "|r" .. statSuffix)
+                        else
+                            itemFrame.text:SetText("|cffa335ee" .. (itemName or "Loading...") .. "|r" .. statSuffix)
+                        end
+                        itemFrame.icon:SetTexture(dbIcon or 134400)
+                        itemFrame.dupHighlight:Hide()
+
+                        UpdateItemReceivedVisuals(itemFrame, isReceived)
+                        itemFrame:Show()
+                        RegisterItemFrame(itemID, itemFrame)
+                        itemPoolIdx = itemPoolIdx + 1
+                    end
+                    currentY = currentY - 21
+                end
+                currentY = currentY - 4
+            end
+        end
+
+        UpdateSpecFooterCounts()
+    else
+        local _, _, normalTrackLabel = GetNormalLootTrackInfo(viewMode, selectedKeystoneLevel, selectedRaidDifficulty, currentBossEncID)
+
+        bonusRollBanner:Show()
+        bonusRollBanner:SetWidth(816)
+        bonusRollBanner.text:SetText(string.format("Loot drops at |cff55ff55%s|r", normalTrackLabel or "1/6 Myth"))
+
         sharedFrame:Hide()
         sharedFrame:SetHeight(0)
-    else
-        sharedFrame:Show()
-        sharedFrame:SetHeight(dynamicHeight)
-    end
 
-    LayoutSpecFrames(numSpecs)
-
-    for i, spec in ipairs(specs) do
-        specFrames[i].title:SetText(spec.name)
-        specFrames[i].specIcon:SetTexture(spec.icon)
-    end
-
-    local function linkFor(itemID)
-        if isBonusRollMode then
-            return BuildItemLink(itemID, bonusIdToUse)
+        local specItemsBySlot = {}
+        for si = 1, numSpecs do
+            specItemsBySlot[si] = {}
         end
-        if viewMode ~= "raid" then return nil end
-        local d = GetItemData(itemID)
-        if d and d.links and d.links[selectedRaidDifficulty] then
-            return d.links[selectedRaidDifficulty]
-        end
-        local raidBonusId = GetRaidBonusId(selectedRaidDifficulty, currentBossEncID)
-        return BuildItemLink(itemID, raidBonusId)
-    end
 
-    if not isBonusRollMode and totalShared > 0 then
-        for i, itemID in ipairs(sharedItems) do
-            AddItemToPool(sharedDisplayFrames, sharedFrame, i, itemID, bonusIdToUse, linkFor(itemID), false, sharedItemsPerCol, trackLabelToUse, 0)
+        for _, itemID in ipairs(lootTable) do
+            if IsItemAllowed(itemID) then
+                local slotId = GetSlotId(itemID)
+                for si, spec in ipairs(specs) do
+                    if DoesItemDropForSpec(itemID, classID, spec.id) then
+                        specItemsBySlot[si][slotId] = specItemsBySlot[si][slotId] or {}
+                        table.insert(specItemsBySlot[si][slotId], itemID)
+                    end
+                end
+            end
         end
-    end
 
-    for si = 1, numSpecs do
-        local specID = specs[si].id
-        for i, itemID in ipairs(specItems[si]) do
-            AddItemToPool(specDisplayFrames[si], specFrames[si], i, itemID, bonusIdToUse, linkFor(itemID), true, nil, trackLabelToUse, specID)
+        local activeSlots = {}
+        for _, slotId in ipairs(SLOT_ORDER) do
+            local maxCount = 0
+            for si = 1, numSpecs do
+                local items = specItemsBySlot[si][slotId]
+                local count = items and #items or 0
+                if count > maxCount then maxCount = count end
+            end
+            if maxCount > 0 then
+                table.insert(activeSlots, {
+                    slotId = slotId,
+                    slotName = addonTable.SlotNames[slotId] or "Other",
+                    maxCount = maxCount
+                })
+            end
         end
+
+        local totalSlotRows = 0
+        for _, slot in ipairs(activeSlots) do
+            totalSlotRows = totalSlotRows + 1 + slot.maxCount
+        end
+        local contentHeight = 10 + (totalSlotRows * 21) + (#activeSlots * 4) + 40
+        local calculatedHeight = math.max(580, 160 + contentHeight + 12)
+        mainFrame:SetHeight(calculatedHeight)
+
+        if isUnified then
+            LayoutSpecFrames(numSpecs, true)
+
+            -- Footer on specFrames[1] with all 3 spec icons
+            local f = specFrames[1]
+            f.specIcon:SetSize(24, 24)
+            f.specIcon:ClearAllPoints()
+            f.specIcon:SetPoint("BOTTOM", f, "BOTTOM", -110, 8)
+            f.specIcon:SetTexture(specs[1].icon)
+
+            if f.extraIcons then
+                f.extraIcons[2]:SetTexture(specs[2].icon)
+                f.extraIcons[2]:Show()
+                f.extraIcons[3]:SetTexture(specs[3].icon)
+                f.extraIcons[3]:Show()
+                f.title:ClearAllPoints()
+                f.title:SetPoint("LEFT", f.extraIcons[3], "RIGHT", 8, 0)
+            end
+
+            local parent = specFrames[1]
+            local currentY = -10
+            local itemPoolIdx = 1
+            local headerPoolIdx = 1
+            local colWidth = 480
+            local colOffset = (816 - colWidth) / 2
+
+            for _, slot in ipairs(activeSlots) do
+                local slotId = slot.slotId
+                local items = specItemsBySlot[1][slotId] or {}
+
+                if #items > 0 then
+                    -- Slot Header
+                    local headerFrame = CreateOrReuseHeaderFrame(specHeaderFrames[1], headerPoolIdx, parent)
+                    headerFrame:ClearAllPoints()
+                    headerFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", colOffset, currentY)
+                    headerFrame:SetWidth(colWidth)
+                    headerFrame.text:SetText("|cffffd100" .. slot.slotName .. "|r")
+                    headerFrame.line:SetColorTexture(1, 0.82, 0, 0.25)
+                    headerFrame:Show()
+                    headerPoolIdx = headerPoolIdx + 1
+                    currentY = currentY - 18
+
+                    -- Items under this slot
+                    for _, itemID in ipairs(items) do
+                        local itemFrame = CreateOrReuseItemFrame(specDisplayFrames[1], itemPoolIdx, parent)
+                        itemFrame:ClearAllPoints()
+                        itemFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", colOffset, currentY)
+                        itemFrame:SetSize(colWidth, 20)
+                        itemFrame.text:SetWidth(colWidth - 22)
+
+                        itemFrame.itemID = itemID
+                        itemFrame.specID = specs[1].id
+                        itemFrame.bonusId = bonusIdToUse
+                        itemFrame.itemLink = linkFor(itemID, bonusIdToUse)
+                        itemFrame.trackLabel = nil
+                        itemFrame.viewMode = viewMode
+                        itemFrame.raidDifficulty = selectedRaidDifficulty
+                        itemFrame.keystoneLevel = selectedKeystoneLevel
+
+                        itemFrame.isExclusive = false
+                        itemFrame.exclusiveHighlight:Hide()
+                        itemFrame.exclusiveBar:Hide()
+
+                        local itemName = C_Item.GetItemInfo(itemID)
+                        local itemData = GetItemData(itemID)
+                        local dbIcon = (itemData and itemData.icon) or C_Item.GetItemIconByID(itemID)
+
+                        local statText = GetItemStatString(itemID)
+                        local statSuffix = (statText and statText ~= "") and (" |cff888888" .. statText .. "|r") or ""
+
+                        itemFrame.text:SetText("|cffa335ee" .. (itemName or "Loading...") .. "|r" .. statSuffix)
+                        itemFrame.icon:SetTexture(dbIcon or 134400)
+                        itemFrame.dupHighlight:Hide()
+
+                        UpdateItemReceivedVisuals(itemFrame, false)
+                        itemFrame:Show()
+                        RegisterItemFrame(itemID, itemFrame)
+                        itemPoolIdx = itemPoolIdx + 1
+                        currentY = currentY - 21
+                    end
+                    currentY = currentY - 4
+                end
+            end
+        else
+            LayoutSpecFrames(numSpecs, false)
+
+            if specFrames[1].extraIcons then
+                specFrames[1].extraIcons[2]:Hide()
+                specFrames[1].extraIcons[3]:Hide()
+            end
+
+            for i, spec in ipairs(specs) do
+                specFrames[i].specIcon:SetSize(28, 28)
+                specFrames[i].specIcon:ClearAllPoints()
+                specFrames[i].specIcon:SetPoint("BOTTOM", specFrames[i], "BOTTOM", -36, 8)
+                specFrames[i].specIcon:SetTexture(spec.icon)
+                specFrames[i].title:ClearAllPoints()
+                specFrames[i].title:SetPoint("LEFT", specFrames[i].specIcon, "RIGHT", 6, 0)
+            end
+
+            local panelWidth = (816 - (4 * (numSpecs - 1))) / numSpecs
+
+            for si = 1, numSpecs do
+                local spec = specs[si]
+                local parent = specFrames[si]
+                local currentY = -10
+                local itemPoolIdx = 1
+                local headerPoolIdx = 1
+
+                for _, slot in ipairs(activeSlots) do
+                    local slotId = slot.slotId
+                    local items = specItemsBySlot[si][slotId] or {}
+                    local hasItems = #items > 0
+
+                    -- Slot Header
+                    local headerFrame = CreateOrReuseHeaderFrame(specHeaderFrames[si], headerPoolIdx, parent)
+                    headerFrame:ClearAllPoints()
+                    headerFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 6, currentY)
+                    headerFrame:SetWidth(panelWidth - 12)
+
+                    if hasItems then
+                        headerFrame.text:SetText("|cffffd100" .. slot.slotName .. "|r")
+                        headerFrame.line:SetColorTexture(1, 0.82, 0, 0.25)
+                    else
+                        headerFrame.text:SetText("|cff666666" .. slot.slotName .. "|r")
+                        headerFrame.line:SetColorTexture(1, 1, 1, 0.08)
+                    end
+                    headerFrame:Show()
+                    headerPoolIdx = headerPoolIdx + 1
+                    currentY = currentY - 18
+
+                    -- Items under this slot
+                    for rowIdx = 1, slot.maxCount do
+                        local itemID = items[rowIdx]
+                        if itemID then
+                            local itemFrame = CreateOrReuseItemFrame(specDisplayFrames[si], itemPoolIdx, parent)
+                            itemFrame:ClearAllPoints()
+                            itemFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 6, currentY)
+                            itemFrame:SetSize(panelWidth - 12, 20)
+                            itemFrame.text:SetWidth(panelWidth - 12 - 22)
+
+                            itemFrame.itemID = itemID
+                            itemFrame.specID = spec.id
+                            itemFrame.bonusId = bonusIdToUse
+                            itemFrame.itemLink = linkFor(itemID, bonusIdToUse)
+                            itemFrame.trackLabel = nil
+                            itemFrame.viewMode = viewMode
+                            itemFrame.raidDifficulty = selectedRaidDifficulty
+                            itemFrame.keystoneLevel = selectedKeystoneLevel
+
+                            local isExclusive = IsItemExclusiveToSpec(itemID, classID, specs)
+                            itemFrame.isExclusive = isExclusive
+                            if isExclusive then
+                                itemFrame.exclusiveHighlight:Show()
+                                itemFrame.exclusiveBar:Show()
+                            else
+                                itemFrame.exclusiveHighlight:Hide()
+                                itemFrame.exclusiveBar:Hide()
+                            end
+
+                            local itemName = C_Item.GetItemInfo(itemID)
+                            local itemData = GetItemData(itemID)
+                            local dbIcon = (itemData and itemData.icon) or C_Item.GetItemIconByID(itemID)
+
+                            local statText = GetItemStatString(itemID)
+                            local statSuffix = (statText and statText ~= "") and (" |cff888888" .. statText .. "|r") or ""
+
+                            itemFrame.text:SetText("|cffa335ee" .. (itemName or "Loading...") .. "|r" .. statSuffix)
+                            itemFrame.icon:SetTexture(dbIcon or 134400)
+                            itemFrame.dupHighlight:Hide()
+
+                            UpdateItemReceivedVisuals(itemFrame, false)
+                            itemFrame:Show()
+                            RegisterItemFrame(itemID, itemFrame)
+                            itemPoolIdx = itemPoolIdx + 1
+                        end
+                        currentY = currentY - 21
+                    end
+                    currentY = currentY - 4
+                end
+            end
+        end
+
+        UpdateSpecFooterCounts()
     end
 end
 
