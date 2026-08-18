@@ -8,11 +8,16 @@ Useful for picking which loot spec to set before pushing a key or pulling a boss
 
 ## Key Features
 
-* **Side-by-Side Comparison:** View loot for all specs of a class simultaneously.
-* **Shared Loot Panel:** Quickly identify items that drop for *every* spec (e.g., necks, rings, cloaks).
+* **Side-by-Side Comparison & Equipment Slot Headers:** View loot for all specs of a class simultaneously organized by equipment slot (Head, Neck, Shoulder, Chest, Waist, Legs, Weapon, Trinket, etc.) with horizontally synchronized rows across all columns.
+* **Unified Multi-Spec Layout for Pure Casters:** For classes sharing identical loot tables across all specializations (Mage and Warlock), automatically unifies into a single centered panel in Normal mode, displaying all 3 spec icons side-by-side at the bottom (`[Arcane] [Fire] [Frost] All Specializations (<total>)`).
+* **Item Secondary Stats & Weapon Primaries:** Displays secondary stats next to item names in grey text, prioritized in standard order (**Crit** > **Haste** > **Vers** > **Mast**, e.g. `Crit/Mast`, `Vers/Mast`, `Haste/Vers`). Weapons and off-hands include primary stat abbreviations (`Str`, `Agi`, `Int`, e.g. `Str/Agi Haste/Mast`, `Agi/Int Crit/Haste`).
+* **Cantrip Identifiers:** Items with special equip or on-use proc effects are tagged with `Cantrip` (e.g. `Str Haste Cantrip`, `Crit Cantrip`). Trinkets remain clean without stat tags.
+* **Spec-Exclusive Item Highlighting:** Items that drop exclusively for a single spec within a class feature a subtle warm gold background tint, a left-edge gold accent bar, and a `★ Spec-Exclusive Item` tooltip note.
+* **Upgrade Track Banners:** Displays a unified banner above the columns with real-time drop tracks in Normal mode (e.g. `"Loot drops at 1/6 Myth"`, `"Loot drops at 3/6 Hero"`) and reward tracks in Bonus Rolls mode (e.g. `"Bonus rolls give 1/6 Myth loot"`).
+* **Dynamic Spec Footer Counts:** Displays the total loot table count in Normal mode (e.g. `Guardian (8)`) and remaining unobtained items in Bonus Rolls mode (e.g. `Balance (5)`), updating in real time.
 * **Bonus Rolls & Great Vault Tracking:** Check the "Bonus Rolls" mode toggle to view scaled Great Vault item levels and upgrade track badges (e.g., `1/6 Myth`, `4/6 Myth`, `6/6 Myth`). Right-click any item in this mode to mark it as received (applying a strikethrough line and dimming the icon), removing it from your active loot pool per-spec. Mythic+ keystone levels +2 through +9 have independent loot pools while +10 and above share a unified pool. Raid loot pools are isolated per difficulty (LFR, Normal, Heroic, Mythic).
 * **Automated Bonus Roll Detection:** Automatically captures bonus roll rewards (`BONUS_ROLL_RESULT`), detects the active dungeon & keystone level or raid boss encounter, attributes the item to your effective loot specialization and difficulty/key tier, marks it as received in real-time, and prints a formatted confirmation to chat with scaled item level tooltips.
-* **Smart Highlighting:** Hover over an item to see it light up in every spec panel where it appears.
+* **Smart Duplicate Highlighting:** Hover over an item to see it light up in every spec panel where it appears.
 * **Addon Compartment & In-Game Icon:** Integrated with the modern Minimap Addon Compartment menu and AddOns window.
 * **Difficulty-Aware Tooltips & Upgrade Tracks:** Real-time item level previews and upgrade tracks based on Keystone level (+2 to +10) or Raid difficulty (LFR through Mythic).
 * **Tier Token & Omni-Curio Support:** Accurately classifies class tier tokens and omni-curios for applicable specs while filtering out cosmetic transmogs, mounts, pets, and non-equipment clutter.
