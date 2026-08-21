@@ -15,8 +15,9 @@ local function ensureFrame()
     frame:SetSize(720, 520)
     frame:SetPoint("CENTER")
     -- Sit above the main SpecLoot frame so dungeon-icon / item-row buttons inside
-    -- it can't bleed through. DIALOG strata is one tier above MEDIUM (default).
+    -- it can't bleed through.
     frame:SetFrameStrata("DIALOG")
+    frame:SetFrameLevel(100)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:SetClampedToScreen(true)
