@@ -1,5 +1,11 @@
 # Changelog
 
+## [12.1.1]
+
+### Bug Fixes & UI Layering
+- **Frame Strata & Custom UI Compatibility**: Set the main SpecLoot frame strata to `DIALOG` to ensure the window renders above custom HUD elements, player/target unit frames, WeakAuras, and cooldown managers (such as Ellesmere UI).
+- **Output Popup Layering**: Configured `SpecLootOutputFrame` with an elevated frame level (`100`) so debug and probe output dialogs remain above the main SpecLoot window.
+
 ## [12.1.0 - Season 2]
 
 ### UI & Layout Modernization
