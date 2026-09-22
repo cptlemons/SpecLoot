@@ -1,5 +1,16 @@
 # Changelog
 
+## [12.1.2]
+
+### Bonus Rolls & Scraper Safeguards
+- **Ula'tek Omni-Token Filtering**: Excluded the *Slumbering Coil Curio* (omni-token, item 270909) from Bonus Rolls mode, aligning with in-game mechanics where curios are direct boss drops and cannot be obtained from bonus rolls. The curio remains visible and tracked in Normal Loot mode.
+- **Heroic Raid Bonus Roll Scaling**: Fixed Heroic raid bonus rolls to consistently display and attribute rewards at **1/6 Myth** (item level 318, bonus ID 12849), rather than scaling across boss ranks.
+- **Class Armor Proficiencies & Scraper Safeguards**:
+  - Implemented `addonTable.IsItemValidForClass` enforcing primary armor proficiencies (Plate, Mail, Leather, Cloth) across all 13 playable classes.
+  - Added render-time guards in `DoesItemDropForSpec` to ensure off-armor items (e.g. cloth/leather/mail on a plate wearer) can never render in class loot columns.
+  - Hardened the Encounter Journal scraper with filter verification (`EJ_GetLootFilter`) and leak detection to prevent asynchronous journal updates from attributing full boss loot tables to the player's class.
+  - Added automatic SavedVariables cache sanitization on startup to detect and repair any existing cross-armor classification corruption.
+
 ## [12.1.1]
 
 ### Bug Fixes & UI Layering

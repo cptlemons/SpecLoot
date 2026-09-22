@@ -97,9 +97,9 @@ func TestItemFilteringAndBlindingVale(t *testing.T) {
 	}
 
 	// 3. Test Item Filtering Rules
-	isAllowed := func(id int) bool {
+	isAllowed := func(id int, isBonusRoll bool) bool {
 		if id == 270909 {
-			return true
+			return !isBonusRoll
 		}
 		if id == 258045 || id == 279118 || id == 275658 || id == 256625 {
 			return false
@@ -111,22 +111,25 @@ func TestItemFilteringAndBlindingVale(t *testing.T) {
 		return true
 	}
 
-	if !isAllowed(270909) {
-		t.Errorf("270909 (Slumbering Coil Curio) should be allowed")
+	if !isAllowed(270909, false) {
+		t.Errorf("270909 (Slumbering Coil Curio) should be allowed in Normal Loot mode")
 	}
-	if isAllowed(258045) {
+	if isAllowed(270909, true) {
+		t.Errorf("270909 (Slumbering Coil Curio) should be excluded in Bonus Rolls mode")
+	}
+	if isAllowed(258045, false) {
 		t.Errorf("258045 (Dawnblade's Glaives) should be filtered out as cosmetic")
 	}
-	if isAllowed(279118) {
+	if isAllowed(279118, false) {
 		t.Errorf("279118 (Lost Explorers' Mailbox) should be filtered out")
 	}
-	if isAllowed(275658) {
+	if isAllowed(275658, false) {
 		t.Errorf("275658 (Primeval Skyfriend) should be filtered out")
 	}
-	if isAllowed(256625) {
+	if isAllowed(256625, false) {
 		t.Errorf("256625 (Pattern: Hexwoven Strand) should be filtered out")
 	}
-	if !isAllowed(270923) {
+	if !isAllowed(270923, false) {
 		t.Errorf("270923 (Venomcured Remnant) should be allowed")
 	}
 }
@@ -144,5 +147,58 @@ func TestBonusRollsModeTrackMapping(t *testing.T) {
 	// Verify KeystoneMapping rules contain M+ 10 Great Vault -> myth 1
 	if !strings.Contains(content, `keystones = { 10 }`) || !strings.Contains(content, `greatVault = { track = "myth", rank = 1 }`) {
 		t.Errorf("Data.lua missing M+ 10 Great Vault mapping to myth 1")
+	}
+
+	// Verify SpecLoot.lua Heroic raid bonus rolls always map to 1/6 Myth
+	speclootBytes, err := os.ReadFile("../../SpecLoot/SpecLoot.lua")
+	if err != nil {
+		speclootBytes, err = os.ReadFile("../../SpecLoot.lua")
+		if err != nil {
+			t.Fatalf("reading SpecLoot.lua: %v", err)
+		}
+	}
+	speclootContent := string(speclootBytes)
+
+	if !strings.Contains(speclootContent, `trackLabel = "1/6 Myth"`) {
+		t.Errorf("SpecLoot.lua missing fixed 1/6 Myth trackLabel for heroic raid bonus rolls")
+	}
+
+	if strings.Contains(speclootContent, `raidDifficulty == 15 then`+"\r\n"+`            -- Heroic -> Mythic / Myth track (1/6 Myth .. 4/6 Myth)`) {
+		t.Errorf("SpecLoot.lua still contains old bossRank scaling for Heroic raid bonus rolls")
+	}
+}
+
+func TestClassArmorProficiencyDefinitions(t *testing.T) {
+	dataBytes, err := os.ReadFile("../../SpecLoot/Data.lua")
+	if err != nil {
+		dataBytes, err = os.ReadFile("../../Data.lua")
+		if err != nil {
+			t.Fatalf("reading Data.lua: %v", err)
+		}
+	}
+	content := string(dataBytes)
+
+	if !strings.Contains(content, "addonTable.ClassArmorType = {") {
+		t.Errorf("Data.lua missing addonTable.ClassArmorType definition")
+	}
+	if !strings.Contains(content, "function addonTable.IsItemValidForClass(itemID, classID)") {
+		t.Errorf("Data.lua missing addonTable.IsItemValidForClass function")
+	}
+
+	// Verify primary armor classes:
+	// Plate (4): Warrior [1], Paladin [2], Death Knight [6]
+	// Mail (3): Hunter [3], Shaman [7], Evoker [13]
+	// Leather (2): Rogue [4], Monk [10], Druid [11], Demon Hunter [12]
+	// Cloth (1): Priest [5], Mage [8], Warlock [9]
+	expectedArmorChecks := []string{
+		`[1]  = 4`, `[2]  = 4`, `[6]  = 4`,
+		`[3]  = 3`, `[7]  = 3`, `[13] = 3`,
+		`[4]  = 2`, `[10] = 2`, `[11] = 2`, `[12] = 2`,
+		`[5]  = 1`, `[8]  = 1`, `[9]  = 1`,
+	}
+	for _, check := range expectedArmorChecks {
+		if !strings.Contains(content, check) {
+			t.Errorf("Data.lua ClassArmorType missing or incorrect for: %s", check)
+		}
 	}
 }
