@@ -106,6 +106,52 @@ addonTable.SlotNames = {
     [20] = "Token",
 }
 
+-- Source 1e: Class Armor Proficiencies (1 = Cloth, 2 = Leather, 3 = Mail, 4 = Plate)
+addonTable.ClassArmorType = {
+    [1]  = 4, -- Warrior: Plate
+    [2]  = 4, -- Paladin: Plate
+    [3]  = 3, -- Hunter: Mail
+    [4]  = 2, -- Rogue: Leather
+    [5]  = 1, -- Priest: Cloth
+    [6]  = 4, -- Death Knight: Plate
+    [7]  = 3, -- Shaman: Mail
+    [8]  = 1, -- Mage: Cloth
+    [9]  = 1, -- Warlock: Cloth
+    [10] = 2, -- Monk: Leather
+    [11] = 2, -- Druid: Leather
+    [12] = 2, -- Demon Hunter: Leather
+    [13] = 3, -- Evoker: Mail
+}
+
+function addonTable.IsItemValidForClass(itemID, classID)
+    if not classID or not itemID then return true end
+
+    -- 1. Static ItemDatabase validation
+    if addonTable.ItemDatabase and addonTable.ItemDatabase[itemID] then
+        local staticItem = addonTable.ItemDatabase[itemID]
+        if staticItem.classes then
+            return (staticItem.classes[classID] ~= nil)
+        end
+    end
+
+    -- 2. Primary armor slot & subclass check via C_Item API
+    if C_Item and C_Item.GetItemInfoInstant then
+        local _, _, _, equipLoc, _, itemClassID, itemSubClassID = C_Item.GetItemInfoInstant(itemID)
+        if itemClassID == 4 then -- Armor
+            if itemSubClassID and itemSubClassID >= 1 and itemSubClassID <= 4 then
+                if equipLoc ~= "INVTYPE_CLOAK" then
+                    local expectedArmor = addonTable.ClassArmorType and addonTable.ClassArmorType[classID]
+                    if expectedArmor and itemSubClassID ~= expectedArmor then
+                        return false
+                    end
+                end
+            end
+        end
+    end
+
+    return true
+end
+
 -- Source 2: Static Item Database (populated for 12.1 / Season 2)
 addonTable.ItemDatabase = {
 -- Dungeons

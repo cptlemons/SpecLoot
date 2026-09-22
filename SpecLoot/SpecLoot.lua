@@ -347,11 +347,11 @@ local function GetBonusRollTrackInfo(vMode, keystoneLevel, raidDifficulty, bossE
             bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12841
             trackLabel = bossRank .. "/6 Hero"
         elseif raidDifficulty == 15 then
-            -- Heroic -> Mythic / Myth track (1/6 Myth .. 4/6 Myth)
+            -- Heroic -> Mythic / Myth track (Heroic bonus rolls always drop at 1/6 Myth)
             local trackData = addonTable.RaidTracks and addonTable.RaidTracks["mythic"]
-            ilvl = trackData and trackData[bossRank] and trackData[bossRank].ilvl or 318
-            bonusId = trackData and trackData[bossRank] and trackData[bossRank].bonusId or 12849
-            trackLabel = bossRank .. "/6 Myth"
+            ilvl = trackData and trackData[1] and trackData[1].ilvl or 318
+            bonusId = trackData and trackData[1] and trackData[1].bonusId or 12849
+            trackLabel = "1/6 Myth"
         else
             -- Mythic (16) -> 6/6 Myth or 9/6 Myth
             if bossRank >= 3 then
@@ -426,9 +426,11 @@ local function GetItemData(itemID)
     return addonTable.Scraper:GetItemData(itemID)
 end
 
-local function IsItemAllowed(itemID)
+local function IsItemAllowed(itemID, isBonusRoll)
     if itemID == 270909 then
-        return true -- Omni token Slumbering Coil Curio
+        -- Slumbering Coil Curio (omni-token from Ula'tek) drops directly from boss in normal loot,
+        -- but does NOT drop from bonus rolls.
+        return not isBonusRoll
     end
     if itemID == 258045 or itemID == 279118 or itemID == 275658 or itemID == 256625 then
         return false -- Filter out Dawnblade's Glaives (cosmetic weapon), Lost Explorers' Mailbox, Primeval Skyfriend, Hexwoven Strand
@@ -451,6 +453,10 @@ local function IsItemAllowed(itemID)
 end
 
 local function DoesItemDropForSpec(itemID, classID, specID)
+    -- Guard: reject items that violate class armor or weapon proficiencies
+    if addonTable.IsItemValidForClass and not addonTable.IsItemValidForClass(itemID, classID) then
+        return false
+    end
     local itemData = GetItemData(itemID)
     if not itemData or not itemData.classes then return false end
     local specsForClass = itemData.classes[classID]
@@ -712,6 +718,10 @@ HandleBonusRollResult = function(typeIdentifier, itemLink, quantity, specID)
     local itemIDStr = itemLink:match("|Hitem:(%d+):")
     local itemID = itemIDStr and tonumber(itemIDStr) or tonumber(itemLink)
     if not itemID then
+        return
+    end
+
+    if not IsItemAllowed(itemID, true) then
         return
     end
 
@@ -1424,7 +1434,7 @@ local function UpdateSpecFooterCounts()
     if isUnified then
         local totalCount = 0
         for _, itemID in ipairs(currentLootTable or {}) do
-            if IsItemAllowed(itemID) and DoesItemDropForSpec(itemID, classID, specs[1].id) then
+            if IsItemAllowed(itemID, isBonusRollMode) and DoesItemDropForSpec(itemID, classID, specs[1].id) then
                 totalCount = totalCount + 1
             end
         end
@@ -1435,7 +1445,7 @@ local function UpdateSpecFooterCounts()
             local totalCount = 0
             local receivedCount = 0
             for _, itemID in ipairs(currentLootTable or {}) do
-                if IsItemAllowed(itemID) and DoesItemDropForSpec(itemID, classID, spec.id) then
+                if IsItemAllowed(itemID, isBonusRollMode) and DoesItemDropForSpec(itemID, classID, spec.id) then
                     totalCount = totalCount + 1
                     if IsItemReceived(viewMode, diffOrTier, spec.id, itemID) then
                         receivedCount = receivedCount + 1
@@ -1882,7 +1892,7 @@ function UpdateLootDisplay()
         end
 
         for _, itemID in ipairs(lootTable) do
-            if IsItemAllowed(itemID) then
+            if IsItemAllowed(itemID, true) then
                 local slotId = GetSlotId(itemID)
                 for si, spec in ipairs(specs) do
                     if DoesItemDropForSpec(itemID, classID, spec.id) then
@@ -2040,7 +2050,7 @@ function UpdateLootDisplay()
         end
 
         for _, itemID in ipairs(lootTable) do
-            if IsItemAllowed(itemID) then
+            if IsItemAllowed(itemID, false) then
                 local slotId = GetSlotId(itemID)
                 for si, spec in ipairs(specs) do
                     if DoesItemDropForSpec(itemID, classID, spec.id) then
@@ -2263,10 +2273,32 @@ function UpdateLootDisplay()
     end
 end
 
+-- Sanitize SavedVariables itemCache to purge any invalid cross-armor classifications
+function addonTable.SanitizeCache()
+    if not SpecLootDB or not SpecLootDB.itemCache then return end
+    local corruptedClasses = {}
+    for itemID, itemData in pairs(SpecLootDB.itemCache) do
+        if itemData and itemData.classes then
+            for classID, _ in pairs(itemData.classes) do
+                if addonTable.IsItemValidForClass and not addonTable.IsItemValidForClass(itemID, classID) then
+                    itemData.classes[classID] = nil
+                    corruptedClasses[classID] = true
+                end
+            end
+        end
+    end
+    if SpecLootDB.classifiedClasses then
+        for classID in pairs(corruptedClasses) do
+            SpecLootDB.classifiedClasses[classID] = nil
+        end
+    end
+end
+
 -- All heavy init happens lazily on first show: run a scrape if the cache is
 -- stale, classify the player's class if it hasn't been yet, and warm the item
 -- cache. Subsequent opens are instant.
 mainFrame:SetScript("OnShow", function()
+    addonTable.SanitizeCache()
     if not addonTable.Scraper:IsCacheFresh() then
         addonTable.Scraper:Scrape(false)
     end

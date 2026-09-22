@@ -266,10 +266,18 @@ local function ResolveItem(itemID, fallbackIcon, itemCache, itemLinks)
     -- spec data is filled in by ClassifyItemsBySpec; we still call this so
     -- player-class data is available immediately, before Phase 3 runs.
     local specs = C_Item.GetItemSpecInfo(itemID)
+    local packed = PackSpecsByClass(specs)
+    if addonTable.IsItemValidForClass then
+        for cid in pairs(packed) do
+            if not addonTable.IsItemValidForClass(itemID, cid) then
+                packed[cid] = nil
+            end
+        end
+    end
     itemCache[itemID] = {
         slotId  = slotId,
         icon    = icon,
-        classes = PackSpecsByClass(specs),
+        classes = packed,
     }
     return true
 end
@@ -294,6 +302,10 @@ local function ClassifyOneClass(results, classID, buf)
     if not classInfo then return end
 
     local function recordSpec(itemID, specID)
+        -- Hard guard: never record items that violate class armor or weapon proficiencies
+        if addonTable.IsItemValidForClass and not addonTable.IsItemValidForClass(itemID, classID) then
+            return
+        end
         local itemData = results.itemCache and results.itemCache[itemID]
         if not itemData then return end
         itemData.classes = itemData.classes or {}
@@ -304,17 +316,52 @@ local function ClassifyOneClass(results, classID, buf)
         table.insert(itemData.classes[classID], specID)
     end
 
+    local classFailed = false
     local function walkInstance(journalID, encounters, difficultyID, specID)
         SelectInstanceSafely(journalID)
-        for encID in pairs(encounters) do
+        for encID, encBucket in pairs(encounters) do
             EJ_SelectEncounter(encID)
             EJ_SetDifficulty(difficultyID)
             EJ_SetLootFilter(classID, specID)
+
+            -- Verify filter applied
+            local curClass, curSpec
+            if EJ_GetLootFilter then
+                curClass, curSpec = EJ_GetLootFilter()
+                if curClass ~= classID or curSpec ~= specID then
+                    EJ_SetLootFilter(classID, specID)
+                    curClass, curSpec = EJ_GetLootFilter()
+                end
+            end
+
             local count = EJ_GetNumLoot() or 0
-            for i = 1, count do
-                local lootInfo = C_EncounterJournal.GetLootInfoByIndex(i)
-                if lootInfo and lootInfo.itemID and lootInfo.itemID > 0 then
-                    recordSpec(lootInfo.itemID, specID)
+            local totalEncItems = (encBucket and encBucket.items) and #encBucket.items or 0
+
+            -- Detect filter leak / failure: if the journal returned the full unfiltered loot
+            -- table on a multi-item encounter or returned armor for other classes, the filter failed.
+            local filterFailed = (curClass and (curClass ~= classID or curSpec ~= specID))
+            if not filterFailed and totalEncItems > 4 and count >= totalEncItems then
+                for i = 1, count do
+                    local lootInfo = C_EncounterJournal.GetLootInfoByIndex(i)
+                    if lootInfo and lootInfo.itemID and addonTable.IsItemValidForClass and not addonTable.IsItemValidForClass(lootInfo.itemID, classID) then
+                        filterFailed = true
+                        break
+                    end
+                end
+            end
+
+            if not filterFailed then
+                for i = 1, count do
+                    local lootInfo = C_EncounterJournal.GetLootInfoByIndex(i)
+                    if lootInfo and lootInfo.itemID and lootInfo.itemID > 0 then
+                        recordSpec(lootInfo.itemID, specID)
+                    end
+                end
+            else
+                classFailed = true
+                if buf then
+                    table.insert(buf, string.format("    WARN: filter leak/failure detected [enc=%d, class=%d, spec=%d], skipped",
+                        encID, classID, specID))
                 end
             end
         end
@@ -346,7 +393,11 @@ local function ClassifyOneClass(results, classID, buf)
     end
 
     results.classifiedClasses = results.classifiedClasses or {}
-    results.classifiedClasses[classID] = true
+    if not classFailed then
+        results.classifiedClasses[classID] = true
+    else
+        results.classifiedClasses[classID] = nil
+    end
     RestoreCurrentLootFilter()
 end
 
@@ -359,21 +410,21 @@ end
 -- attribute every item to every spec of the player's class and flood the
 -- loot panels with the wrong items. A single-frame delay lets the journal
 -- settle, and the filter then applies as expected.
+local inFlightClasses = {}
 function Scraper:EnsureClassClassified(classID)
     if not SpecLootDB or not SpecLootDB.itemCache then return false end
-    SpecLootDB.classifiedClasses = SpecLootDB.classifiedClasses or {}
-    if SpecLootDB.classifiedClasses[classID] then
+    if inFlightClasses[classID] or (SpecLootDB.classifiedClasses and SpecLootDB.classifiedClasses[classID]) then
         return false -- already classified or in-flight
     end
 
-    -- Mark up-front so re-entrant calls don't queue duplicate work.
-    SpecLootDB.classifiedClasses[classID] = true
+    inFlightClasses[classID] = true
 
     C_Timer.After(0, function()
         EnsureEJReady()
         SuppressEJUI()
         ClassifyOneClass(SpecLootDB, classID, nil)
         RestoreEJUI()
+        inFlightClasses[classID] = nil
         -- Notify the UI so the freshly-classified data gets rendered.
         if type(addonTable.OnScrapeComplete) == "function" then
             pcall(addonTable.OnScrapeComplete)
