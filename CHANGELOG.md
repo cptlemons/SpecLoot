@@ -1,6 +1,6 @@
 # Changelog
 
-## [12.1.2]
+## [12.1.0-05]
 
 ### Bonus Rolls & Scraper Safeguards
 - **Ula'tek Omni-Token Filtering**: Excluded the *Slumbering Coil Curio* (omni-token, item 270909) from Bonus Rolls mode, aligning with in-game mechanics where curios are direct boss drops and cannot be obtained from bonus rolls. The curio remains visible and tracked in Normal Loot mode.
