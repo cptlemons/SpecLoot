@@ -202,3 +202,72 @@ func TestClassArmorProficiencyDefinitions(t *testing.T) {
 		}
 	}
 }
+
+func TestKithixRaidAndMetadata(t *testing.T) {
+	// 1. Check manifest.json
+	manifestBytes, err := os.ReadFile("manifest.json")
+	if err != nil {
+		manifestBytes, err = os.ReadFile("tools/fetchloot/manifest.json")
+		if err != nil {
+			t.Fatalf("reading manifest.json: %v", err)
+		}
+	}
+	manifestContent := string(manifestBytes)
+	if !strings.Contains(manifestContent, `"The Unbinding of Kith'ix"`) ||
+		!strings.Contains(manifestContent, `"journalInstanceId": 1324`) ||
+		!strings.Contains(manifestContent, `"instanceId": 2669`) ||
+		!strings.Contains(manifestContent, `"abbrev": "UOK"`) {
+		t.Errorf("manifest.json missing or incomplete entry for The Unbinding of Kith'ix")
+	}
+
+	// 2. Check Data.lua
+	dataBytes, err := os.ReadFile("../../SpecLoot/Data.lua")
+	if err != nil {
+		dataBytes, err = os.ReadFile("../../Data.lua")
+		if err != nil {
+			t.Fatalf("reading Data.lua: %v", err)
+		}
+	}
+	dataContent := string(dataBytes)
+
+	if !strings.Contains(dataContent, `name = "The Unbinding of Kith'ix"`) ||
+		!strings.Contains(dataContent, `journalInstanceId = 1324`) ||
+		!strings.Contains(dataContent, `id = 3513, name = "Kith'ix"`) ||
+		!strings.Contains(dataContent, `rank = 3`) {
+		t.Errorf("Data.lua missing The Unbinding of Kith'ix raid or encounter with rank 3")
+	}
+
+	// Trinkets
+	for _, itemID := range []string{"280617", "280835", "281215"} {
+		if !strings.Contains(dataContent, "["+itemID+"] = {") {
+			t.Errorf("Data.lua ItemDatabase missing Kith'ix trinket %s", itemID)
+		}
+	}
+
+	// 3. Check SpecLoot.toc
+	tocBytes, err := os.ReadFile("../../SpecLoot/SpecLoot.toc")
+	if err != nil {
+		tocBytes, err = os.ReadFile("../../SpecLoot.toc")
+		if err != nil {
+			t.Fatalf("reading SpecLoot.toc: %v", err)
+		}
+	}
+	tocContent := string(tocBytes)
+	if !strings.Contains(tocContent, "## Interface: 120105") {
+		t.Errorf("SpecLoot.toc missing Interface: 120105")
+	}
+
+	// 4. Check Scraper.lua
+	scraperBytes, err := os.ReadFile("../../SpecLoot/Scraper.lua")
+	if err != nil {
+		scraperBytes, err = os.ReadFile("../../Scraper.lua")
+		if err != nil {
+			t.Fatalf("reading Scraper.lua: %v", err)
+		}
+	}
+	scraperContent := string(scraperBytes)
+	if !strings.Contains(scraperContent, "local SCRAPE_VERSION = 15") {
+		t.Errorf("Scraper.lua missing SCRAPE_VERSION = 15")
+	}
+}
+

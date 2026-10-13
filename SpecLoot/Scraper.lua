@@ -4,7 +4,7 @@ local Scraper = {}
 addonTable.Scraper = Scraper
 
 -- Bump this to force a full re-scrape on next login (e.g. after content patches).
-local SCRAPE_VERSION = 14
+local SCRAPE_VERSION = 15
 
 -- Blizzard_EncounterJournal is load-on-demand. Until it's been initialized, the
 -- EJ_* APIs only return items the player has personally encountered, not the
@@ -205,8 +205,21 @@ local function EnumerateLoot(instanceID, difficultyID, instanceBucket, itemSeen,
         ClearLootFilter()
         local count = EJ_GetNumLoot() or 0
 
+        local staticRank
+        for _, r in ipairs(addonTable.RaidDatabase or {}) do
+            if r.journalInstanceId == journalInstanceID then
+                for _, e in ipairs(r.encounters or {}) do
+                    if e.id == encID then
+                        staticRank = e.rank
+                        break
+                    end
+                end
+                break
+            end
+        end
+
         instanceBucket.encounters[encID] = instanceBucket.encounters[encID] or {
-            name = encName, items = {}, _seen = {}, index = encIndex
+            name = encName, items = {}, _seen = {}, index = encIndex, rank = staticRank
         }
         local enc = instanceBucket.encounters[encID]
 
@@ -687,6 +700,7 @@ function Scraper:GetRaidEncounters(journalInstanceID)
                     creatureDisplayID = enc.creatureDisplayID,
                     items = enc.items,
                     index = enc.index,
+                    rank = enc.rank,
                 }
             end
             table.sort(list, function(a, b) return (a.index or 9999) < (b.index or 9999) end)
@@ -703,6 +717,7 @@ function Scraper:GetRaidEncounters(journalInstanceID)
                     creatureDisplayID = enc.creatureDisplayID,
                     items = enc.items,
                     index = enc.index,
+                    rank = enc.rank,
                 }
             end
             return list
