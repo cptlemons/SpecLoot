@@ -264,25 +264,41 @@ local function GetRaidDifficultyInfo(difficultyID)
     return raidDifficulties[1]
 end
 
+local function GetBossRank(bossEncID)
+    local bossIndex = 1
+    local explicitRank
+    if bossEncID then
+        if SpecLootDB and SpecLootDB.raids then
+            for _, r in pairs(SpecLootDB.raids) do
+                if r.encounters and r.encounters[bossEncID] then
+                    bossIndex = r.encounters[bossEncID].index or 1
+                    explicitRank = r.encounters[bossEncID].rank
+                    break
+                end
+            end
+        end
+        if not explicitRank and addonTable.RaidDatabase then
+            for _, raid in ipairs(addonTable.RaidDatabase) do
+                for idx, enc in ipairs(raid.encounters or {}) do
+                    if enc.id == bossEncID then
+                        bossIndex = enc.index or idx
+                        explicitRank = enc.rank
+                        break
+                    end
+                end
+            end
+        end
+    end
+    return explicitRank or math.min(4, math.max(1, math.ceil(bossIndex / 2)))
+end
+
 local function GetRaidBonusId(difficultyID, bossEncID)
     local diffKey = "heroic"
     for _, d in ipairs(raidDifficulties) do
         if d.id == difficultyID then diffKey = d.key; break end
     end
 
-    local bossIndex = 1
-    if bossEncID and addonTable.RaidDatabase then
-        for _, raid in ipairs(addonTable.RaidDatabase) do
-            for idx, enc in ipairs(raid.encounters or {}) do
-                if enc.id == bossEncID then
-                    bossIndex = enc.index or idx
-                    break
-                end
-            end
-        end
-    end
-
-    local rank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
+    local rank = GetBossRank(bossEncID)
     local track = addonTable.RaidTracks and addonTable.RaidTracks[diffKey]
     if track and track[rank] then
         return track[rank].bonusId
@@ -320,18 +336,7 @@ local function GetBonusRollTrackInfo(vMode, keystoneLevel, raidDifficulty, bossE
         local trackLabel = rank .. "/" .. maxRank .. " " .. shortTrack
         return ilvl, bonusId, trackLabel
     else
-        local bossIndex = 1
-        if bossEncID and addonTable.RaidDatabase then
-            for _, raid in ipairs(addonTable.RaidDatabase) do
-                for idx, enc in ipairs(raid.encounters or {}) do
-                    if enc.id == bossEncID then
-                        bossIndex = enc.index or idx
-                        break
-                    end
-                end
-            end
-        end
-        local bossRank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
+        local bossRank = GetBossRank(bossEncID)
 
         local ilvl, bonusId, trackLabel
         if raidDifficulty == 17 then
@@ -378,18 +383,7 @@ local function GetNormalLootTrackInfo(vMode, keystoneLevel, raidDifficulty, boss
         local trackLabel = rank .. "/" .. maxRank .. " " .. shortTrack
         return ilvl, bonusId, trackLabel
     else
-        local bossIndex = 1
-        if bossEncID and addonTable.RaidDatabase then
-            for _, raid in ipairs(addonTable.RaidDatabase) do
-                for idx, enc in ipairs(raid.encounters or {}) do
-                    if enc.id == bossEncID then
-                        bossIndex = enc.index or idx
-                        break
-                    end
-                end
-            end
-        end
-        local bossRank = math.min(4, math.max(1, math.ceil(bossIndex / 2)))
+        local bossRank = GetBossRank(bossEncID)
 
         local ilvl, bonusId, trackLabel
         if raidDifficulty == 17 then

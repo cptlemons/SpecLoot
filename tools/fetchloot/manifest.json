@@ -85,6 +85,12 @@
       "instanceId": 3004,
       "journalInstanceId": 1320,
       "abbrev": "TA"
+    },
+    {
+      "name": "The Unbinding of Kith'ix",
+      "instanceId": 2669,
+      "journalInstanceId": 1324,
+      "abbrev": "UOK"
     }
   ]
 }

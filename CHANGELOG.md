@@ -1,5 +1,23 @@
 # Changelog
 
+## [12.1.5-01]
+
+### Patch 12.1.5 Support & The Unbinding of Kith'ix
+- **Patch 12.1.5 Compatibility**: Updated TOC interface version to `120105`.
+- **New Single-Boss Raid Support**: Added *The Unbinding of Kith'ix* (`UOK`) raid instance (journalInstanceId `1324`, instanceId `2669`) and its encounter *Kith'ix* (encounter ID `3513`).
+- **Raid Track & Rank 3 Scaling**: Added explicit encounter rank scaling (`rank = 3`) to support Kith'ix 3/6 upgrade track loot across all difficulties:
+  - Raid Finder: 3/6 Veteran (item level 285, bonus ID 12827)
+  - Normal: 3/6 Champion (item level 298, bonus ID 12835)
+  - Heroic: 3/6 Hero (item level 311, bonus ID 12843)
+  - Mythic: 3/6 Myth (item level 324, bonus ID 12851)
+- **Role Trinket Class & Spec Metadata**: Added item metadata in `Data.lua` for the three Kith'ix role trinkets:
+  - *Lightbearer's Shield Fragment* (Tank, item `280617`): Blood DK, Prot Paladin, Prot Warrior, Guardian Druid, Brewmaster Monk, Vengeance DH.
+  - *Sigil of the Impending Eclipse* (Healer, item `280835`): Holy/Disc Priest, Holy Paladin, Resto Druid, Resto Shaman, Mistweaver Monk, Pres Evoker.
+  - *Twisted Horror's Tendril* (DPS, item `281215`): All damage specializations across all 13 classes.
+- **Scraper & Manifest Updates**:
+  - Registered *The Unbinding of Kith'ix* in `tools/fetchloot/manifest.json`.
+  - Incremented `SCRAPE_VERSION` to `15` to automatically invalidate stale caches and trigger an in-game Encounter Journal re-scrape on login.
+
 ## [12.1.0-05]
 
 ### Bonus Rolls & Scraper Safeguards
